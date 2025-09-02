@@ -1,0 +1,7 @@
+flask
+flask_sqlalchemy
+requests
+gunicorn
+psycopg2-binary
+twilio
+python-dote

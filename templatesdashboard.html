@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bot Manager</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Gerenciamento de Bots</h1>
+
+    <h2>Ativos</h2>
+    <ul>
+        {% for bot in ativos %}
+            <li>{{ bot.name }} - {{ bot.redirect_url }}
+                <a href="{{ url_for('delete_bot', bot_id=bot.id) }}">❌ Remover</a>
+            </li>
+        {% endfor %}
+    </ul>
+
+    <h2>Reserva</h2>
+    <ul>
+        {% for bot in reserva %}
+            <li>{{ bot.name }} - {{ bot.redirect_url }}
+                <a href="{{ url_for('delete_bot', bot_id=bot.id) }}">❌ Remover</a>
+            </li>
+        {% endfor %}
+    </ul>
+
+    <h2>Adicionar Bot</h2>
+    <form method="POST" action="{{ url_for('add_bot') }}">
+        <input type="text" name="name" placeholder="Nome" required>
+        <input type="text" name="token" placeholder="Token" required>
+        <input type="text" name="redirect_url" placeholder="Redirect URL" required>
+        <select name="status">
+            <option value="ativo">Ativo</option>
+            <option value="reserva">Reserva</option>
+        </select>
+        <button type="submit">Adicionar</button>
+    </form>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <ul>
+            {% for category, message in messages %}
+                <li><strong>{{ category }}:</strong> {{ message }}</li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
+</body>
+</html>
