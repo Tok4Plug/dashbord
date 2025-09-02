@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard Bots</title>
+</head>
+<body>
+    <h1>Dashboard Bots</h1>
+
+    <!-- Formulário para adicionar -->
+    <h2>Adicionar Bot</h2>
+    <form method="POST" action="{{ url_for('add_bot') }}">
+        <input type="text" name="name" placeholder="Nome" required>
+        <input type="text" name="token" placeholder="Token" required>
+        <input type="text" name="redirect_url" placeholder="Redirect URL">
+        <select name="status">
+            <option value="ativo">Ativo</option>
+            <option value="reserva">Reserva</option>
+        </select>
+        <button type="submit">Adicionar</button>
+    </form>
+
+    <!-- Tabela de bots -->
+    <h2>Lista de Bots</h2>
+    <table border="1">
+        <tr>
+            <th>ID</th><th>Nome</th><th>Token</th><th>Status</th><th>Ações</th>
+        </tr>
+        {% for bot in bots %}
+        <tr>
+            <td>{{ bot.id }}</td>
+            <td>{{ bot.name }}</td>
+            <td>{{ bot.token }}</td>
+            <td>{{ bot.status }}</td>
+            <td>
+                <form method="POST" action="{{ url_for('update_bot', bot_id=bot.id) }}">
+                    <input type="text" name="name" value="{{ bot.name }}">
+                    <input type="text" name="token" value="{{ bot.token }}">
+                    <select name="status">
+                        <option value="ativo" {% if bot.status == 'ativo' %}selected{% endif %}>Ativo</option>
+                        <option value="reserva" {% if bot.status == 'reserva' %}selected{% endif %}>Reserva</option>
+                    </select>
+                    <button type="submit">Atualizar</button>
+                </form>
+                <form method="POST" action="{{ url_for('delete_bot', bot_id=bot.id) }}">
+                    <button type="submit">Excluir</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <!-- Logs -->
+    <h2>Logs</h2>
+    <pre>
+    {% for log in logs %}
+        {{ log }}
+    {% endfor %}
+    </pre>
+
+</body>
+</html>
