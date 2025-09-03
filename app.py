@@ -5,8 +5,6 @@ import requests
 import urllib.parse
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
 from models import db, Bot
-from flask import Flask, jsonify
-from monitor import ativos, reserva
 
 # ---------- Config ----------
 app = Flask(__name__, template_folder="templates")
@@ -29,11 +27,9 @@ def add_log(s: str):
 # ---------- WhatsApp helpers (Twilio ou CallMeBot) ----------
 def send_whatsapp_message_text(to_number: str, text: str):
     """Envio via Twilio se configurado, caso contrário tenta CallMeBot se APIKEY configurada."""
-    # Twilio
     TWILIO_SID = os.getenv("TWILIO_SID")
     TWILIO_AUTH = os.getenv("TWILIO_AUTH")
     TWILIO_FROM = os.getenv("TWILIO_FROM")  # ex: +14155238886
-    # CallMeBot (alternativa)
     CALLMEBOT_KEY = os.getenv("CALLMEBOT_KEY")  # apikey do callmebot
 
     if TWILIO_SID and TWILIO_AUTH and TWILIO_FROM:
@@ -54,7 +50,6 @@ def send_whatsapp_message_text(to_number: str, text: str):
     if CALLMEBOT_KEY:
         try:
             admin = os.getenv("ADMIN_WHATSAPP")
-            # CallMeBot url: https://api.callmebot.com/whatsapp.php?phone=<phone>&text=<text>&apikey=<apikey>
             url = ("https://api.callmebot.com/whatsapp.php?"
                    f"phone={urllib.parse.quote_plus(admin)}&text={urllib.parse.quote_plus(text)}&apikey={urllib.parse.quote_plus(CALLMEBOT_KEY)}")
             requests.get(url, timeout=10)
@@ -70,21 +65,18 @@ def send_whatsapp_message_text(to_number: str, text: str):
 # ---------- Link checker ----------
 def check_link_ok(url: str) -> bool:
     try:
-        # usa HEAD quando possível, fallback para GET
         r = requests.head(url, timeout=10, allow_redirects=True)
         if r.status_code >= 400:
-            # tenta GET como fallback
             r = requests.get(url, timeout=10, allow_redirects=True)
         return 200 <= r.status_code < 400
-    except Exception as e:
+    except Exception:
         return False
 
 # ---------- Swap logic ----------
 def swap_bot(failed_bot: Bot):
-    """Marca failed como reserva e tenta puxar primeiro da reserva para ativo."""
+    """Marca failed como reserva e ativa o primeiro disponível da reserva."""
     with app.app_context():
         add_log(f"Detectado problema no bot '{failed_bot.name}' ({failed_bot.redirect_url}). Iniciando substituição.")
-        # marca failed como reserva
         failed_bot.status = "reserva"
         db.session.commit()
 
@@ -124,14 +116,14 @@ def monitor_loop():
             add_log(f"Erro no loop do monitor: {e}")
         time.sleep(MONITOR_INTERVAL)
 
-# start monitor thread as daemon
 def start_monitor_thread():
     t = threading.Thread(target=monitor_loop, daemon=True)
     t.start()
 
+# inicia a thread do monitor junto com o web
 start_monitor_thread()
 
-# ---------- Routes (views + API) ----------
+# ---------- Routes ----------
 @app.route("/")
 def index():
     bots = Bot.query.order_by(Bot.id).all()
@@ -190,7 +182,11 @@ def api_force_swap(bot_id):
     swap_bot(bot)
     return jsonify({"ok": True})
 
-# run by gunicorn in production; for local testing you can do:
+# healthcheck simples
+@app.route("/health")
+def health():
+    return "ok", 200
+
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
