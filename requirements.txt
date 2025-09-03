@@ -1,5 +1,4 @@
 flask
-flask_sqlalchemy
-gunicorn
 requests
-psycopg2-binary
+python-dotenv
+twilio
