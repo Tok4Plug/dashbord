@@ -1,2 +1,1 @@
-web: gunicorn app:app --bind 0.0.0.0:$PORT
-worker: python monitor.py
+web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1

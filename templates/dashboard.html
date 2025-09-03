@@ -1,62 +1,228 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-br">
 <head>
-    <meta charset="UTF-8">
-    <title>Dashboard Bots</title>
+  <meta charset="utf-8">
+  <title>Dashboard - Monitor Bots</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    /* Paleta roxa / estilo limpo */
+    :root{
+      --bg:#0f0420;
+      --panel:#1a0625;
+      --accent:#7b2cff;
+      --accent-2:#9b55ff;
+      --muted:#9aa0a6;
+      --card:#20112b;
+      --ok:#22c55e;
+      --warn:#ffb020;
+      --danger:#ff5252;
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    body{background:linear-gradient(180deg,#0c0612 0%, #140722 100%); color:#fff; margin:0; padding:18px;}
+    .container{max-width:1100px; margin:0 auto;}
+    header{display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;}
+    h1{font-weight:700; color:var(--accent); margin:0;}
+    .top-actions{display:flex; gap:10px; align-items:center;}
+    button.primary{background:linear-gradient(90deg,var(--accent),var(--accent-2)); border:0; color:#fff; padding:8px 12px; border-radius:8px; cursor:pointer;}
+    button.ghost{background:transparent; border:1px solid rgba(255,255,255,0.06); color:var(--muted); padding:6px 10px; border-radius:8px; cursor:pointer;}
+    .stats{display:flex; gap:12px; margin-bottom:12px;}
+    .stat{background:var(--card); padding:12px; border-radius:10px; min-width:140px;}
+    .panel{background:var(--panel); padding:16px; border-radius:12px;}
+    table{width:100%; border-collapse:collapse; margin-top:12px; color:#fff;}
+    th,td{padding:10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.03);}
+    .pill{padding:6px 8px; border-radius:999px; font-size:13px;}
+    .activo{background:rgba(34,197,94,0.12); color:var(--ok); border:1px solid rgba(34,197,94,0.12);}
+    .reserva{background:rgba(155,85,255,0.08); color:var(--accent-2); border:1px solid rgba(155,85,255,0.06);}
+    .actions button{margin-right:6px;}
+    .edit-form{display:flex; gap:6px;}
+    input[type="text"]{background:transparent; border:1px solid rgba(255,255,255,0.04); color:#fff; padding:6px 8px; border-radius:6px;}
+    .logs{margin-top:12px; background:#0b0610; padding:12px; border-radius:8px; max-height:240px; overflow:auto; font-size:13px; color:#c9c9d3;}
+    .icon{cursor:pointer; opacity:0.9}
+  </style>
 </head>
 <body>
-    <h1>Dashboard Bots</h1>
+  <div class="container">
+    <header>
+      <h1>Mini Dashboard</h1>
+      <div class="top-actions">
+        <button class="primary" id="btn-open-add">➕ Adicionar Bot</button>
+        <button class="ghost" id="btn-refresh">🔄 Atualizar</button>
+      </div>
+    </header>
 
-    <!-- Formulário para adicionar -->
-    <h2>Adicionar Bot</h2>
-    <form method="POST" action="{{ url_for('add_bot') }}">
-        <input type="text" name="name" placeholder="Nome" required>
-        <input type="text" name="token" placeholder="Token" required>
-        <input type="text" name="redirect_url" placeholder="Redirect URL">
-        <select name="status">
+    <div class="stats">
+      <div class="stat panel">
+        <div style="font-size:12px;color:var(--muted)">Ativos</div>
+        <div id="count-ativos" style="font-size:20px;font-weight:700">0</div>
+      </div>
+      <div class="stat panel">
+        <div style="font-size:12px;color:var(--muted)">Reserva</div>
+        <div id="count-reserva" style="font-size:20px;font-weight:700">0</div>
+      </div>
+      <div class="stat panel">
+        <div style="font-size:12px;color:var(--muted)">Últimas ações</div>
+        <div id="last-action" style="font-size:14px">—</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Nome</th><th>Token</th><th>Redirect</th><th>Status</th><th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="bots-tbody">
+          {% for bot in bots %}
+          <tr data-id="{{ bot.id }}">
+            <td>{{ bot.id }}</td>
+            <td class="col-name">{{ bot.name }}</td>
+            <td class="col-token">{{ bot.token }}</td>
+            <td class="col-redirect">{{ bot.redirect_url }}</td>
+            <td>
+              <span class="pill {% if bot.status=='ativo' %}activo{% else %}reserva{% endif %}">{{ bot.status }}</span>
+            </td>
+            <td class="actions">
+              <button class="ghost" onclick="openEdit({{ bot.id }})">✏️</button>
+              <button class="ghost" onclick="forceSwap({{ bot.id }})">🔁</button>
+              <button class="ghost" onclick="deleteBot({{ bot.id }})">🗑️</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <div class="logs" id="logs">
+        {% for l in logs %}
+          <div>{{ l }}</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Modal simples para adicionar/editar -->
+    <div id="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+      <div style="background:var(--panel); padding:16px; border-radius:10px; width:420px;">
+        <h3 id="modal-title">Adicionar Bot</h3>
+        <div style="display:flex;flex-direction:column; gap:8px;">
+          <input id="f-name" type="text" placeholder="Nome">
+          <input id="f-token" type="text" placeholder="Token (opcional)">
+          <input id="f-redirect" type="text" placeholder="Redirect URL (ex: https://... )">
+          <select id="f-status">
             <option value="ativo">Ativo</option>
             <option value="reserva">Reserva</option>
-        </select>
-        <button type="submit">Adicionar</button>
-    </form>
+          </select>
+          <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="ghost" onclick="closeModal()">Cancelar</button>
+            <button class="primary" onclick="saveBot()">Salvar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-    <!-- Tabela de bots -->
-    <h2>Lista de Bots</h2>
-    <table border="1">
-        <tr>
-            <th>ID</th><th>Nome</th><th>Token</th><th>Status</th><th>Ações</th>
-        </tr>
-        {% for bot in bots %}
-        <tr>
-            <td>{{ bot.id }}</td>
-            <td>{{ bot.name }}</td>
-            <td>{{ bot.token }}</td>
-            <td>{{ bot.status }}</td>
-            <td>
-                <form method="POST" action="{{ url_for('update_bot', bot_id=bot.id) }}">
-                    <input type="text" name="name" value="{{ bot.name }}">
-                    <input type="text" name="token" value="{{ bot.token }}">
-                    <select name="status">
-                        <option value="ativo" {% if bot.status == 'ativo' %}selected{% endif %}>Ativo</option>
-                        <option value="reserva" {% if bot.status == 'reserva' %}selected{% endif %}>Reserva</option>
-                    </select>
-                    <button type="submit">Atualizar</button>
-                </form>
-                <form method="POST" action="{{ url_for('delete_bot', bot_id=bot.id) }}">
-                    <button type="submit">Excluir</button>
-                </form>
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
+<script>
+  // --- helpers ---
+  function qs(sel){return document.querySelector(sel)}
+  function qsa(sel){return document.querySelectorAll(sel)}
 
-    <!-- Logs -->
-    <h2>Logs</h2>
-    <pre>
-    {% for log in logs %}
-        {{ log }}
-    {% endfor %}
-    </pre>
+  async function refreshData(){
+    const res = await fetch("/api/bots");
+    const data = await res.json();
+    renderTable(data.bots);
+  }
 
+  function renderTable(bots){
+    const tbody = qs("#bots-tbody");
+    tbody.innerHTML = "";
+    let ativos = 0, reserva = 0;
+    bots.forEach(b=>{
+      const tr = document.createElement("tr");
+      tr.dataset.id = b.id;
+      const statusClass = b.status === "ativo" ? "activo" : "reserva";
+      if(b.status==="ativo") ativos++; else reserva++;
+      tr.innerHTML = `
+        <td>${b.id}</td>
+        <td class="col-name">${escapeHtml(b.name)}</td>
+        <td class="col-token">${escapeHtml(b.token||"")}</td>
+        <td class="col-redirect"><a href="${escapeAttr(b.redirect_url)}" target="_blank">${escapeHtml(b.redirect_url)}</a></td>
+        <td><span class="pill ${statusClass}">${b.status}</span></td>
+        <td class="actions">
+          <button class="ghost" onclick="openEdit(${b.id})">✏️</button>
+          <button class="ghost" onclick="forceSwap(${b.id})">🔁</button>
+          <button class="ghost" onclick="deleteBot(${b.id})">🗑️</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    qs("#count-ativos").innerText = ativos;
+    qs("#count-reserva").innerText = reserva;
+  }
+
+  function escapeHtml(s){ if(!s) return ""; return s.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
+  function escapeAttr(s){ return s ? s.replaceAll('"','&quot;') : "" }
+
+  // --- modal / add / edit ---
+  let editingId = null;
+  function openAdd(){
+    editingId = null;
+    qs("#modal-title").innerText = "Adicionar Bot";
+    qs("#f-name").value = "";
+    qs("#f-token").value = "";
+    qs("#f-redirect").value = "";
+    qs("#f-status").value = "reserva";
+    qs("#modal").style.display = "flex";
+  }
+  function openEdit(id){
+    editingId = id;
+    // fetch bot data:
+    fetch('/api/bots').then(r=>r.json()).then(d=>{
+      const bot = d.bots.find(x=>x.id===id);
+      if(!bot) return alert("Bot não encontrado");
+      qs("#modal-title").innerText = "Editar Bot";
+      qs("#f-name").value = bot.name;
+      qs("#f-token").value = bot.token || "";
+      qs("#f-redirect").value = bot.redirect_url;
+      qs("#f-status").value = bot.status;
+      qs("#modal").style.display = "flex";
+    });
+  }
+  function closeModal(){ qs("#modal").style.display = "none"; editingId = null; }
+
+  async function saveBot(){
+    const body = {
+      name: qs("#f-name").value.trim(),
+      token: qs("#f-token").value.trim(),
+      redirect_url: qs("#f-redirect").value.trim(),
+      status: qs("#f-status").value
+    };
+    if(!body.name || !body.redirect_url) return alert("Nome e redirect obrigatórios");
+    if(editingId){
+      await fetch(`/api/bot/${editingId}`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    }else{
+      await fetch("/api/bot", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    }
+    closeModal();
+    await refreshData();
+  }
+
+  async function deleteBot(id){
+    if(!confirm("Confirmar exclusão?")) return;
+    await fetch(`/api/bot/${id}/delete`, {method:"POST"});
+    await refreshData();
+  }
+
+  async function forceSwap(id){
+    if(!confirm("Forçar troca deste bot agora?")) return;
+    await fetch(`/api/force_swap/${id}`, {method:"POST"});
+    await refreshData();
+  }
+
+  // Controls
+  qs("#btn-open-add").addEventListener("click", openAdd);
+  qs("#btn-refresh").addEventListener("click", refreshData);
+
+  // initial
+  refreshData();
+</script>
 </body>
 </html>

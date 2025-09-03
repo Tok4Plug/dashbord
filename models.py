@@ -4,9 +4,17 @@ db = SQLAlchemy()
 
 class Bot(db.Model):
     __tablename__ = "bots"
-
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), nullable=False)
-    token = db.Column(db.String(150), nullable=False, unique=True)
-    redirect_url = db.Column(db.String(255), nullable=False)
-    status = db.Column(db.String(20), default="ativo")  # ativo ou reserva
+    name = db.Column(db.String(120), nullable=False)
+    token = db.Column(db.String(200), nullable=True)
+    redirect_url = db.Column(db.String(500), nullable=False)
+    status = db.Column(db.String(20), default="reserva")  # "ativo" ou "reserva"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "token": self.token,
+            "redirect_url": self.redirect_url,
+            "status": self.status
+        }
