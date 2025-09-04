@@ -3,8 +3,9 @@ import threading
 import time
 import requests
 import urllib.parse
-from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
+from flask import Flask, render_template, request, jsonify
 from models import db, Bot
+from utils import check_link, check_token   # agora no topo
 
 # ---------- Config ----------
 app = Flask(__name__, template_folder="templates")
@@ -12,6 +13,7 @@ app.secret_key = os.getenv("SECRET_KEY", "change_me_random")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL", "60"))  # segundos
+FAILURE_THRESHOLD = int(os.getenv("FAILURE_THRESHOLD", "3"))  # nº de falhas consecutivas antes do swap
 
 db.init_app(app)
 
@@ -26,11 +28,10 @@ def add_log(s: str):
 
 # ---------- WhatsApp helpers (Twilio ou CallMeBot) ----------
 def send_whatsapp_message_text(to_number: str, text: str):
-    """Envio via Twilio se configurado, caso contrário tenta CallMeBot se APIKEY configurada."""
     TWILIO_SID = os.getenv("TWILIO_SID")
     TWILIO_AUTH = os.getenv("TWILIO_AUTH")
-    TWILIO_FROM = os.getenv("TWILIO_FROM")  # ex: +14155238886
-    CALLMEBOT_KEY = os.getenv("CALLMEBOT_KEY")  # apikey do callmebot
+    TWILIO_FROM = os.getenv("TWILIO_FROM")
+    CALLMEBOT_KEY = os.getenv("CALLMEBOT_KEY")
 
     if TWILIO_SID and TWILIO_AUTH and TWILIO_FROM:
         try:
@@ -62,22 +63,13 @@ def send_whatsapp_message_text(to_number: str, text: str):
     add_log("Nenhuma integração WhatsApp configurada (TWILIO ou CALLMEBOT).")
     return False
 
-# ---------- Link checker ----------
-def check_link_ok(url: str) -> bool:
-    try:
-        r = requests.head(url, timeout=10, allow_redirects=True)
-        if r.status_code >= 400:
-            r = requests.get(url, timeout=10, allow_redirects=True)
-        return 200 <= r.status_code < 400
-    except Exception:
-        return False
-
 # ---------- Swap logic ----------
 def swap_bot(failed_bot: Bot):
     """Marca failed como reserva e ativa o primeiro disponível da reserva."""
     with app.app_context():
-        add_log(f"Detectado problema no bot '{failed_bot.name}' ({failed_bot.redirect_url}). Iniciando substituição.")
+        add_log(f"Detectado problema persistente no bot '{failed_bot.name}' ({failed_bot.redirect_url}). Iniciando substituição.")
         failed_bot.status = "reserva"
+        failed_bot.failures = 0  # reset contador
         db.session.commit()
 
         replacement = Bot.query.filter_by(status="reserva").order_by(Bot.id).first()
@@ -97,24 +89,47 @@ def swap_bot(failed_bot: Bot):
             add_log("Sem bots em reserva para substituir.")
             send_whatsapp_message_text(os.getenv("ADMIN_WHATSAPP", ""), f"❌ O bot {failed_bot.name} caiu e não há reservas disponíveis!")
 
-# ---------- Monitor thread ----------
+# ---------- Monitor loop ----------
 def monitor_loop():
     with app.app_context():
         db.create_all()
     add_log("Monitor iniciado.")
     send_whatsapp_message_text(os.getenv("ADMIN_WHATSAPP", ""), "🚀 Monitor iniciado.")
+
     while True:
+        start = time.time()
         try:
             with app.app_context():
                 ativos = Bot.query.filter_by(status="ativo").all()
                 for bot in ativos:
-                    ok = check_link_ok(bot.redirect_url)
-                    add_log(f"Check {bot.name}: {'OK' if ok else 'FALHOU'} -> {bot.redirect_url}")
-                    if not ok:
+                    ok_url = check_link(bot.redirect_url, retries=3)
+                    ok_token = check_token(bot.token)
+
+                    ok = ok_url and ok_token
+
+                    if ok:
+                        bot.failures = 0
+                        status_str = "OK"
+                    else:
+                        bot.failures = (bot.failures or 0) + 1
+                        status_str = f"FALHOU ({bot.failures}/{FAILURE_THRESHOLD})"
+
+                    db.session.commit()
+
+                    add_log(
+                        f"Check {bot.name}: {status_str} "
+                        f"(URL={'✅' if ok_url else '❌'} | TOKEN={'✅' if ok_token else '❌'}) "
+                        f"-> {bot.redirect_url}"
+                    )
+
+                    if bot.failures >= FAILURE_THRESHOLD:
                         swap_bot(bot)
+
         except Exception as e:
             add_log(f"Erro no loop do monitor: {e}")
-        time.sleep(MONITOR_INTERVAL)
+
+        elapsed = time.time() - start
+        time.sleep(max(0, MONITOR_INTERVAL - elapsed))
 
 def start_monitor_thread():
     t = threading.Thread(target=monitor_loop, daemon=True)
@@ -143,7 +158,7 @@ def api_add_bot():
     status = data.get("status", "reserva")
     if not name or not redirect_url:
         return jsonify({"error": "name and redirect_url required"}), 400
-    bot = Bot(name=name, token=token, redirect_url=redirect_url, status=status)
+    bot = Bot(name=name, token=token, redirect_url=redirect_url, status=status, failures=0)
     with app.app_context():
         db.session.add(bot)
         db.session.commit()
@@ -182,10 +197,16 @@ def api_force_swap(bot_id):
     swap_bot(bot)
     return jsonify({"ok": True})
 
-# healthcheck simples
 @app.route("/health")
 def health():
-    return "ok", 200
+    ativos = Bot.query.filter_by(status="ativo").count()
+    reserva = Bot.query.filter_by(status="reserva").count()
+    return jsonify({
+        "status": "ok",
+        "ativos": ativos,
+        "reserva": reserva,
+        "last_log": monitor_logs[-1] if monitor_logs else None
+    }), 200
 
 if __name__ == "__main__":
     with app.app_context():
