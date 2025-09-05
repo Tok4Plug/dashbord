@@ -7,10 +7,10 @@ class Bot(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    token = db.Column(db.String(255), nullable=True)
+    token = db.Column(db.String(200), nullable=True)
     redirect_url = db.Column(db.String(500), nullable=False)
-    status = db.Column(db.String(50), default="reserva")  # "ativo" ou "reserva"
-    failures = db.Column(db.Integer, default=0)  # contador de falhas consecutivas
+    status = db.Column(db.String(20), default="reserva")
+    failures = db.Column(db.Integer, default=0)  # <-- nova coluna para contar falhas
 
     def to_dict(self):
         return {

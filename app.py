@@ -93,8 +93,17 @@ def swap_bot(failed_bot: Bot):
 def monitor_loop():
     with app.app_context():
         db.create_all()
-    add_log("Monitor iniciado.")
-    send_whatsapp_message_text(os.getenv("ADMIN_WHATSAPP", ""), "🚀 Monitor iniciado.")
+
+        # Garantir que a coluna failures exista
+        from sqlalchemy import text
+        try:
+            db.session.execute(text("SELECT failures FROM bots LIMIT 1"))
+        except Exception:
+            db.session.execute(text("ALTER TABLE bots ADD COLUMN failures INTEGER DEFAULT 0"))
+            db.session.commit()
+
+        add_log("Monitor iniciado.")
+        send_whatsapp_message_text(os.getenv("ADMIN_WHATSAPP", ""), "🛠️ Monitor iniciado.")
 
     while True:
         start = time.time()
