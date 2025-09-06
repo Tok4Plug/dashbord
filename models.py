@@ -6,11 +6,11 @@ class Bot(db.Model):
     __tablename__ = "bots"
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    token = db.Column(db.String(200), nullable=True)
-    redirect_url = db.Column(db.String(500), nullable=False)
-    status = db.Column(db.String(20), default="reserva")
-    failures = db.Column(db.Integer, default=0)  # <-- nova coluna para contar falhas
+    name = db.Column(db.String(100), nullable=False, unique=True)  # <- adicionei unique=True para evitar duplicados
+    token = db.Column(db.String(200), nullable=True)               # <- campo para checagem por token
+    redirect_url = db.Column(db.String(500), nullable=False)       
+    status = db.Column(db.String(20), default="reserva")           
+    failures = db.Column(db.Integer, default=0)                    # contador de falhas
 
     def to_dict(self):
         return {
