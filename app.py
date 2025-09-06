@@ -126,20 +126,36 @@ def monitor_loop():
             with app.app_context():
                 ativos = Bot.query.filter_by(status="ativo").all()
                 for bot in ativos:
-                    ok_url = check_link(bot.redirect_url, retries=3)
-                    ok_token = check_token(bot.token)
+                    ok = False
+                    ok_token = None
+                    ok_url = None
 
-                    ok = ok_url and ok_token  # checagem dupla
+                    # 🔹 Se o bot tem token, tenta checar pelo token
+                    if bot.token:
+                        ok_token = check_token(bot.token)
+                        ok = ok_token
+
+                    # 🔹 Se não tem token ou o token falhou, checa pela URL
+                    if not ok and bot.redirect_url:
+                        ok_url = check_link(bot.redirect_url, retries=3)
+                        ok = ok_url
 
                     add_log(
                         f"Check {bot.name}: "
-                        f"{'OK' if ok else 'FALHOU'} "
-                        f"(URL={'✅' if ok_url else '❌'} | TOKEN={'✅' if ok_token else '❌'}) "
+                        f"{'✅ OK' if ok else '❌ FALHOU'} "
+                        f"(URL={'✅' if ok_url else '❌' if ok_url is False else '⏭'} | "
+                        f"TOKEN={'✅' if ok_token else '❌' if ok_token is False else '⏭'}) "
                         f"-> {bot.redirect_url}"
                     )
 
                     if not ok:
-                        swap_bot(bot)
+                        bot.failures += 1
+                        if bot.failures >= 3:  # só troca se falhar 3 vezes seguidas
+                            swap_bot(bot)
+                    else:
+                        bot.failures = 0  # reseta falhas se voltou ao normal
+
+                db.session.commit()
 
         except Exception as e:
             add_log(f"Erro no loop do monitor: {e}")
