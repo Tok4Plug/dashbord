@@ -5,45 +5,73 @@
   <title>Dashboard - Monitor Bots</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    /* Paleta roxa / estilo limpo */
     :root{
-      --bg:#0f0420;
-      --panel:#1a0625;
+      --bg:#0e0519;
+      --panel:#1a0f2b;
       --accent:#7b2cff;
       --accent-2:#9b55ff;
       --muted:#9aa0a6;
-      --card:#20112b;
+      --card:#241534;
       --ok:#22c55e;
       --warn:#ffb020;
-      --danger:#ff5252;
-      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      --danger:#ff4d6d;
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
     }
-    body{background:linear-gradient(180deg,#0c0612 0%, #140722 100%); color:#fff; margin:0; padding:18px;}
-    .container{max-width:1100px; margin:0 auto;}
-    header{display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;}
-    h1{font-weight:700; color:var(--accent); margin:0;}
-    .top-actions{display:flex; gap:10px; align-items:center;}
-    button.primary{background:linear-gradient(90deg,var(--accent),var(--accent-2)); border:0; color:#fff; padding:8px 12px; border-radius:8px; cursor:pointer;}
-    button.ghost{background:transparent; border:1px solid rgba(255,255,255,0.06); color:var(--muted); padding:6px 10px; border-radius:8px; cursor:pointer;}
-    .stats{display:flex; gap:12px; margin-bottom:12px;}
-    .stat{background:var(--card); padding:12px; border-radius:10px; min-width:140px;}
-    .panel{background:var(--panel); padding:16px; border-radius:12px;}
+    body{background:linear-gradient(180deg,#0b0312 0%, #18092b 100%); color:#fff; margin:0; padding:20px;}
+    .container{max-width:1200px; margin:0 auto;}
+    header{display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;}
+    h1{font-weight:800; color:var(--accent); margin:0; font-size:28px;}
+    .top-actions{display:flex; gap:12px;}
+    button.primary{
+      background:linear-gradient(90deg,var(--accent),var(--accent-2));
+      border:0; color:#fff; padding:8px 14px; border-radius:8px; cursor:pointer;
+      transition:opacity .2s;
+    }
+    button.primary:hover{opacity:.85}
+    button.ghost{
+      background:transparent; border:1px solid rgba(255,255,255,0.08);
+      color:var(--muted); padding:6px 12px; border-radius:8px; cursor:pointer;
+      transition:all .2s;
+    }
+    button.ghost:hover{border-color:var(--accent-2); color:#fff}
+    .stats{display:flex; gap:14px; margin-bottom:16px; flex-wrap:wrap;}
+    .stat{background:var(--card); padding:14px; border-radius:12px; flex:1; min-width:160px;}
+    .stat .label{font-size:13px;color:var(--muted)}
+    .stat .value{font-size:22px;font-weight:700;margin-top:4px}
+    .panel{background:var(--panel); padding:18px; border-radius:12px;}
     table{width:100%; border-collapse:collapse; margin-top:12px; color:#fff;}
-    th,td{padding:10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.03);}
-    .pill{padding:6px 8px; border-radius:999px; font-size:13px;}
-    .activo{background:rgba(34,197,94,0.12); color:var(--ok); border:1px solid rgba(34,197,94,0.12);}
-    .reserva{background:rgba(155,85,255,0.08); color:var(--accent-2); border:1px solid rgba(155,85,255,0.06);}
-    .actions button{margin-right:6px;}
-    .edit-form{display:flex; gap:6px;}
-    input[type="text"]{background:transparent; border:1px solid rgba(255,255,255,0.04); color:#fff; padding:6px 8px; border-radius:6px;}
-    .logs{margin-top:12px; background:#0b0610; padding:12px; border-radius:8px; max-height:240px; overflow:auto; font-size:13px; color:#c9c9d3;}
-    .icon{cursor:pointer; opacity:0.9}
+    th,td{padding:10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.05);}
+    th{color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:0.5px;}
+    .pill{padding:5px 10px; border-radius:999px; font-size:12px; font-weight:600;}
+    .activo{background:rgba(34,197,94,0.12); color:var(--ok); border:1px solid rgba(34,197,94,0.18);}
+    .reserva{background:rgba(155,85,255,0.12); color:var(--accent-2); border:1px solid rgba(155,85,255,0.18);}
+    .danger{color:var(--danger)}
+    .actions button{margin-right:4px; font-size:14px;}
+    .logs{margin-top:16px; background:#12081d; padding:12px; border-radius:10px; max-height:260px; overflow-y:auto; font-size:13px; color:#cfcfe5; line-height:1.5;}
+    .logs div.warn{color:var(--warn)}
+    .logs div.ok{color:var(--ok)}
+    .logs div.error{color:var(--danger)}
+    .edit-form{display:flex; gap:8px;}
+    input,select{
+      background:transparent; border:1px solid rgba(255,255,255,0.08);
+      color:#fff; padding:8px 10px; border-radius:6px; width:100%;
+    }
+    select{background-color:var(--card)}
+    .modal{
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6);
+      align-items:center; justify-content:center; z-index:1000;
+    }
+    .modal-content{
+      background:var(--panel); padding:18px; border-radius:12px; width:420px;
+    }
+    .modal h3{margin:0 0 12px; font-size:18px; font-weight:700;}
+    .modal .actions{display:flex; justify-content:flex-end; gap:10px; margin-top:14px;}
   </style>
 </head>
 <body>
   <div class="container">
 <header>
-  <h1 style="letter-spacing:2px; font-size:26px;">TOK4 <span style="color:var(--accent-2)">PLUG</span></h1>
+  <h1>TOK4 <span style="color:var(--accent-2)">PLUG</span></h1>
   <div class="top-actions">
     <button class="primary" id="btn-open-add">➕ Adicionar Bot</button>
     <button class="ghost" id="btn-refresh">🔄 Atualizar</button>
@@ -51,17 +79,17 @@
 </header>
 
     <div class="stats">
-      <div class="stat panel">
-        <div style="font-size:12px;color:var(--muted)">Ativos</div>
-        <div id="count-ativos" style="font-size:20px;font-weight:700">0</div>
+      <div class="stat">
+        <div class="label">Ativos</div>
+        <div id="count-ativos" class="value">0</div>
       </div>
-      <div class="stat panel">
-        <div style="font-size:12px;color:var(--muted)">Reserva</div>
-        <div id="count-reserva" style="font-size:20px;font-weight:700">0</div>
+      <div class="stat">
+        <div class="label">Reserva</div>
+        <div id="count-reserva" class="value">0</div>
       </div>
-      <div class="stat panel">
-        <div style="font-size:12px;color:var(--muted)">Últimas ações</div>
-        <div id="last-action" style="font-size:14px">—</div>
+      <div class="stat">
+        <div class="label">Última ação</div>
+        <div id="last-action" class="value">—</div>
       </div>
     </div>
 
@@ -69,49 +97,28 @@
       <table>
         <thead>
           <tr>
-            <th>ID</th><th>Nome</th><th>Token</th><th>Redirect</th><th>Status</th><th>Ações</th>
+            <th>ID</th><th>Nome</th><th>Token</th><th>Redirect</th><th>Status</th><th>Falhas</th><th>Ações</th>
           </tr>
         </thead>
-        <tbody id="bots-tbody">
-          {% for bot in bots %}
-          <tr data-id="{{ bot.id }}">
-            <td>{{ bot.id }}</td>
-            <td class="col-name">{{ bot.name }}</td>
-            <td class="col-token">{{ bot.token }}</td>
-            <td class="col-redirect">{{ bot.redirect_url }}</td>
-            <td>
-              <span class="pill {% if bot.status=='ativo' %}activo{% else %}reserva{% endif %}">{{ bot.status }}</span>
-            </td>
-            <td class="actions">
-              <button class="ghost" onclick="openEdit({{ bot.id }})">✏️</button>
-              <button class="ghost" onclick="forceSwap({{ bot.id }})">🔁</button>
-              <button class="ghost" onclick="deleteBot({{ bot.id }})">🗑️</button>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
+        <tbody id="bots-tbody"></tbody>
       </table>
 
-      <div class="logs" id="logs">
-        {% for l in logs %}
-          <div>{{ l }}</div>
-        {% endfor %}
-      </div>
+      <div class="logs" id="logs"></div>
     </div>
 
-    <!-- Modal simples para adicionar/editar -->
-    <div id="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
-      <div style="background:var(--panel); padding:16px; border-radius:10px; width:420px;">
+    <!-- Modal -->
+    <div class="modal" id="modal">
+      <div class="modal-content">
         <h3 id="modal-title">Adicionar Bot</h3>
         <div style="display:flex;flex-direction:column; gap:8px;">
           <input id="f-name" type="text" placeholder="Nome">
           <input id="f-token" type="text" placeholder="Token (opcional)">
-          <input id="f-redirect" type="text" placeholder="Redirect URL (ex: https://... )">
+          <input id="f-redirect" type="text" placeholder="Redirect URL (https://...)">
           <select id="f-status">
             <option value="ativo">Ativo</option>
             <option value="reserva">Reserva</option>
           </select>
-          <div style="display:flex; gap:8px; justify-content:flex-end;">
+          <div class="actions">
             <button class="ghost" onclick="closeModal()">Cancelar</button>
             <button class="primary" onclick="saveBot()">Salvar</button>
           </div>
@@ -121,32 +128,32 @@
   </div>
 
 <script>
-  // --- helpers ---
   function qs(sel){return document.querySelector(sel)}
-  function qsa(sel){return document.querySelectorAll(sel)}
 
   async function refreshData(){
     const res = await fetch("/api/bots");
     const data = await res.json();
     renderTable(data.bots);
+    renderLogs(data.logs||[]);
+    if(data.last_action) qs("#last-action").innerText = data.last_action;
   }
 
   function renderTable(bots){
     const tbody = qs("#bots-tbody");
     tbody.innerHTML = "";
-    let ativos = 0, reserva = 0;
+    let ativos=0,reserva=0;
     bots.forEach(b=>{
-      const tr = document.createElement("tr");
-      tr.dataset.id = b.id;
-      const statusClass = b.status === "ativo" ? "activo" : "reserva";
       if(b.status==="ativo") ativos++; else reserva++;
+      const statusClass = b.status==="ativo" ? "activo":"reserva";
+      const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${b.id}</td>
-        <td class="col-name">${escapeHtml(b.name)}</td>
-        <td class="col-token">${escapeHtml(b.token||"")}</td>
-        <td class="col-redirect"><a href="${escapeAttr(b.redirect_url)}" target="_blank">${escapeHtml(b.redirect_url)}</a></td>
+        <td>${escapeHtml(b.name)}</td>
+        <td>${escapeHtml(b.token||"")}</td>
+        <td><a href="${escapeAttr(b.redirect_url)}" target="_blank">${escapeHtml(b.redirect_url)}</a></td>
         <td><span class="pill ${statusClass}">${b.status}</span></td>
-        <td class="actions">
+        <td class="${b.failures>0?'danger':''}">${b.failures||0}</td>
+        <td>
           <button class="ghost" onclick="openEdit(${b.id})">✏️</button>
           <button class="ghost" onclick="forceSwap(${b.id})">🔁</button>
           <button class="ghost" onclick="deleteBot(${b.id})">🗑️</button>
@@ -154,75 +161,57 @@
       `;
       tbody.appendChild(tr);
     });
-    qs("#count-ativos").innerText = ativos;
-    qs("#count-reserva").innerText = reserva;
+    qs("#count-ativos").innerText=ativos;
+    qs("#count-reserva").innerText=reserva;
   }
 
-  function escapeHtml(s){ if(!s) return ""; return s.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
-  function escapeAttr(s){ return s ? s.replaceAll('"','&quot;') : "" }
-
-  // --- modal / add / edit ---
-  let editingId = null;
-  function openAdd(){
-    editingId = null;
-    qs("#modal-title").innerText = "Adicionar Bot";
-    qs("#f-name").value = "";
-    qs("#f-token").value = "";
-    qs("#f-redirect").value = "";
-    qs("#f-status").value = "reserva";
-    qs("#modal").style.display = "flex";
+  function renderLogs(logs){
+    const box = qs("#logs");
+    box.innerHTML="";
+    logs.forEach(l=>{
+      let cls=""; if(l.includes("⚠️")) cls="warn"; if(l.includes("✅")) cls="ok"; if(l.includes("❌")) cls="error";
+      const div=document.createElement("div");
+      div.className=cls;
+      div.innerText=l;
+      box.appendChild(div);
+    });
+    box.scrollTop=box.scrollHeight;
   }
+
+  function escapeHtml(s){return s? s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])):""}
+  function escapeAttr(s){return s? s.replace(/"/g,"&quot;"):""}
+
+  // --- Modal ---
+  let editingId=null;
+  function openAdd(){editingId=null;resetForm();qs("#modal-title").innerText="Adicionar Bot";qs("#modal").style.display="flex";}
   function openEdit(id){
-    editingId = id;
-    // fetch bot data:
+    editingId=id;
     fetch('/api/bots').then(r=>r.json()).then(d=>{
-      const bot = d.bots.find(x=>x.id===id);
-      if(!bot) return alert("Bot não encontrado");
-      qs("#modal-title").innerText = "Editar Bot";
-      qs("#f-name").value = bot.name;
-      qs("#f-token").value = bot.token || "";
-      qs("#f-redirect").value = bot.redirect_url;
-      qs("#f-status").value = bot.status;
-      qs("#modal").style.display = "flex";
+      const bot=d.bots.find(x=>x.id===id); if(!bot) return;
+      qs("#modal-title").innerText="Editar Bot";
+      qs("#f-name").value=bot.name; qs("#f-token").value=bot.token||""; qs("#f-redirect").value=bot.redirect_url; qs("#f-status").value=bot.status;
+      qs("#modal").style.display="flex";
     });
   }
-  function closeModal(){ qs("#modal").style.display = "none"; editingId = null; }
+  function closeModal(){qs("#modal").style.display="none"; editingId=null;}
+  function resetForm(){qs("#f-name").value="";qs("#f-token").value="";qs("#f-redirect").value="";qs("#f-status").value="reserva";}
 
   async function saveBot(){
-    const body = {
-      name: qs("#f-name").value.trim(),
-      token: qs("#f-token").value.trim(),
-      redirect_url: qs("#f-redirect").value.trim(),
-      status: qs("#f-status").value
-    };
-    if(!body.name || !body.redirect_url) return alert("Nome e redirect obrigatórios");
-    if(editingId){
-      await fetch(`/api/bot/${editingId}`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
-    }else{
-      await fetch("/api/bot", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
-    }
-    closeModal();
-    await refreshData();
+    const body={name:qs("#f-name").value.trim(),token:qs("#f-token").value.trim(),redirect_url:qs("#f-redirect").value.trim(),status:qs("#f-status").value};
+    if(!body.name||!body.redirect_url) return alert("Nome e redirect são obrigatórios");
+    if(editingId){await fetch(`/api/bot/${editingId}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});}
+    else{await fetch("/api/bot",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});}
+    closeModal();refreshData();
   }
+  async function deleteBot(id){if(!confirm("Excluir este bot?")) return;await fetch(`/api/bot/${id}/delete`,{method:"POST"});refreshData();}
+  async function forceSwap(id){if(!confirm("Forçar troca deste bot?")) return;await fetch(`/api/force_swap/${id}`,{method:"POST"});refreshData();}
 
-  async function deleteBot(id){
-    if(!confirm("Confirmar exclusão?")) return;
-    await fetch(`/api/bot/${id}/delete`, {method:"POST"});
-    await refreshData();
-  }
+  // binds
+  qs("#btn-open-add").addEventListener("click",openAdd);
+  qs("#btn-refresh").addEventListener("click",refreshData);
 
-  async function forceSwap(id){
-    if(!confirm("Forçar troca deste bot agora?")) return;
-    await fetch(`/api/force_swap/${id}`, {method:"POST"});
-    await refreshData();
-  }
-
-  // Controls
-  qs("#btn-open-add").addEventListener("click", openAdd);
-  qs("#btn-refresh").addEventListener("click", refreshData);
-
-  // initial
-  refreshData();
+  // inicial
+  refreshData(); setInterval(refreshData,15000); // atualiza a cada 15s
 </script>
 </body>
 </html>

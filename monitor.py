@@ -1,8 +1,9 @@
 import os
 import time
 import requests
-from utils import check_link
 from twilio.rest import Client
+from utils import check_link
+from models import db, Bot
 
 # === Variáveis de ambiente (Railway → Variables) ===
 TYPEBOT_API = os.getenv("TYPEBOT_API")   # Ex: https://typebot.io/api/v1
@@ -15,59 +16,89 @@ ADMIN_WHATSAPP = os.getenv("ADMIN_WHATSAPP")  # Seu número WhatsApp com prefixo
 # === Setup Twilio ===
 twilio_client = Client(TWILIO_SID, TWILIO_AUTH)
 
-# Listas de links
-ativos = []
-reserva = []
 
 def send_whatsapp(msg: str):
     """Envia mensagem para o WhatsApp via Twilio"""
-    twilio_client.messages.create(
-        body=msg,
-        from_=f"whatsapp:{TWILIO_FROM}",
-        to=f"whatsapp:{ADMIN_WHATSAPP}"
-    )
+    try:
+        twilio_client.messages.create(
+            body=msg,
+            from_=f"whatsapp:{TWILIO_FROM}",
+            to=f"whatsapp:{ADMIN_WHATSAPP}"
+        )
+    except Exception as e:
+        print(f"❌ Erro ao enviar WhatsApp: {e}")
 
-def carregar_links():
+
+def carregar_links_typebot():
     """Busca os links do flow no Typebot"""
-    url = f"{TYPEBOT_API}/bots/{TYPEBOT_FLOW_ID}"
-    r = requests.get(url)
-    data = r.json()
+    try:
+        url = f"{TYPEBOT_API}/bots/{TYPEBOT_FLOW_ID}"
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
 
-    links = []
-    for block in data.get("blocks", []):
-        if block.get("type") == "redirect":
-            links.append(block["content"]["url"])
+        links = []
+        for block in data.get("blocks", []):
+            if block.get("type") == "redirect":
+                links.append(block["content"]["url"])
+        return links
 
-    return links
+    except Exception as e:
+        print(f"❌ Erro ao carregar links do Typebot: {e}")
+        send_whatsapp(f"⚠️ Erro ao carregar links do Typebot: {e}")
+        return []
+
+
+def get_bots_from_db():
+    """Carrega os bots do banco"""
+    ativos = Bot.query.filter_by(status="ativo").all()
+    reserva = Bot.query.filter_by(status="reserva").all()
+    return ativos, reserva
+
 
 def monitor_loop():
-    global ativos, reserva
+    print("🔄 Carregando bots do banco...")
+    ativos, reserva = get_bots_from_db()
 
-    print("🔄 Carregando links do flow...")
-    links = carregar_links()
+    if not ativos and reserva:
+        # Ativa os dois primeiros, se não houver ativos
+        for bot in reserva[:2]:
+            bot.status = "ativo"
+        db.session.commit()
+        ativos, reserva = get_bots_from_db()
 
-    if not ativos:
-        # Primeiros links entram como ativos
-        ativos = links[:2]   # Exemplo: 2 ativos
-        reserva = links[2:]  # O resto fica como reserva
-
-    print("✅ Monitoramento iniciado")
+    print(f"✅ Monitoramento iniciado | Ativos: {len(ativos)} | Reserva: {len(reserva)}")
     send_whatsapp("🚀 Monitor do Typebot iniciado com sucesso!")
 
     while True:
-        for link in list(ativos):
-            if not check_link(link):
-                send_whatsapp(f"⚠️ Link caiu: {link}")
-                ativos.remove(link)
+        for bot in list(ativos):
+            print(f"🔎 Checando bot {bot.name} → {bot.redirect_url}")
+            if not check_link(bot.redirect_url):
+                bot.failures += 1
+                db.session.commit()
+
+                send_whatsapp(f"⚠️ Bot caiu!\n\n"
+                              f"Nome: {bot.name}\n"
+                              f"URL: {bot.redirect_url}\n"
+                              f"Falhas: {bot.failures}")
+
+                # Desativa o bot
+                bot.status = "inativo"
+                db.session.commit()
+                ativos.remove(bot)
 
                 if reserva:
                     novo = reserva.pop(0)
+                    novo.status = "ativo"
+                    db.session.commit()
                     ativos.append(novo)
-                    send_whatsapp(f"🔄 Substituído por: {novo}")
+                    send_whatsapp(f"🔄 Substituído automaticamente!\n\n"
+                                  f"Novo Ativo: {novo.name}\nURL: {novo.redirect_url}")
                 else:
-                    send_whatsapp("❌ Não há mais links na reserva!")
+                    send_whatsapp("❌ Não há mais bots na reserva!")
 
         time.sleep(60)  # checa a cada 60s
+
 
 if __name__ == "__main__":
     monitor_loop()

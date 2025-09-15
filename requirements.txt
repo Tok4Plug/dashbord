@@ -1,6 +1,18 @@
-flask
-flask_sqlalchemy
-gunicorn
-requests
-twilio
-psycopg2-binary
+# --- Framework Web ---
+Flask==3.0.3
+Flask-SQLAlchemy==3.1.1
+
+# --- Banco de Dados (Postgres) ---
+psycopg2-binary==2.9.9
+SQLAlchemy==2.0.36
+
+# --- Servidor de Produção ---
+gunicorn==23.0.0
+
+# --- Integrações ---
+requests==2.32.3
+twilio==9.2.3
+python-dotenv==1.0.1  # para rodar com .env local
+
+# --- Observabilidade / Logs ---
+prometheus-client==0.21.0
