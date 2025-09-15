@@ -1,22 +1,20 @@
-# app.py (versão final revisada e sincronizada)
+# app.py (versão final revisada com Flask-Migrate)
 import os
 import threading
 import time
 import logging
-import traceback
 from datetime import datetime
 from typing import List, Optional
 import urllib.parse
-
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from flask import Flask, render_template, request, jsonify
-from sqlalchemy import inspect
+from flask_migrate import Migrate
 
 # imports locais
 from models import db, Bot
-from utils import check_link, check_token
+from utils import check_link
 
 # ---------- Config & Logger ----------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -27,14 +25,16 @@ app.secret_key = os.getenv("SECRET_KEY", "change_me_random")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# Configurações de monitor
+# Integração Flask-Migrate
+db.init_app(app)
+migrate = Migrate(app, db)
+
+# ---------- Configurações ----------
 MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL", "60"))
 FAIL_THRESHOLD = int(os.getenv("FAIL_THRESHOLD", "3"))
 CHECK_TIMEOUT = float(os.getenv("CHECK_TIMEOUT", "7.0"))
 MAX_LOGS = int(os.getenv("MAX_LOGS", "300"))
 MAX_WORKERS = int(os.getenv("MONITOR_MAX_WORKERS", "8"))
-
-db.init_app(app)
 
 # ---------- Logs ----------
 monitor_logs: List[str] = []
@@ -96,7 +96,7 @@ def send_whatsapp_message_text(to_number: Optional[str], text_msg: str) -> bool:
             add_log(f"Erro Twilio: {e}")
             logger.exception("Erro Twilio")
 
-    # CallMeBot
+    # CallMeBot (backup)
     if CALLMEBOT_KEY and recipients:
         try:
             for r in recipients:
@@ -145,7 +145,7 @@ def swap_bot(failed_bot: Bot):
         with app.app_context():
             session = db.session
             with session.begin():
-                fb = session.query(Bot).get(bot_id)
+                fb = session.get(Bot, bot_id)
                 if not fb:
                     return
                 fb.status = "reserva"
@@ -169,9 +169,6 @@ def swap_bot(failed_bot: Bot):
 
 # ---------- Monitor ----------
 def monitor_loop():
-    with app.app_context():
-        db.create_all()
-
     send_whatsapp_message_text(None, "🚀 Monitor iniciado.")
     add_log("Monitor iniciado.")
 
@@ -196,7 +193,7 @@ def monitor_loop():
 
 def check_and_maybe_swap(bot_id: int):
     with app.app_context():
-        bot = db.session.query(Bot).get(bot_id)
+        bot = db.session.get(Bot, bot_id)
         if not bot:
             return
 
@@ -211,9 +208,10 @@ def check_and_maybe_swap(bot_id: int):
                 f"RESULT={'✅' if ok else '❌'}")
 
         with db.session.begin():
-            b = db.session.query(Bot).get(bot_id)
+            b = db.session.get(Bot, bot_id)
             if ok:
                 b.failures = 0
+                b.last_ok = datetime.utcnow()
             else:
                 b.failures = (b.failures or 0) + 1
                 metrics["failures_total"] += 1
@@ -254,5 +252,6 @@ start_monitor_thread()
 
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=bool(os.getenv("DEBUG", "True") == "True"))
+        # Não usamos mais db.create_all(); agora usamos flask db migrate/upgrade
+        pass
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=os.getenv("DEBUG", "True") == "True")
