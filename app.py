@@ -1,4 +1,4 @@
-# app.py (versão final revisada com Flask-Migrate)
+# app.py (versão final com Flask-Migrate e robustez para alta escala)
 import os
 import threading
 import time
@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 from typing import List, Optional
 import urllib.parse
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -251,7 +252,5 @@ def start_monitor_thread():
 start_monitor_thread()
 
 if __name__ == "__main__":
-    with app.app_context():
-        # Não usamos mais db.create_all(); agora usamos flask db migrate/upgrade
-        pass
+    # Não criamos tabelas automaticamente; usamos `flask db migrate/upgrade`
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=os.getenv("DEBUG", "True") == "True")
