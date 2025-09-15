@@ -1,9 +1,19 @@
 import os
 import time
 import requests
+import logging
 from twilio.rest import Client
+from sqlalchemy.exc import SQLAlchemyError
+
 from utils import check_link
 from models import db, Bot
+
+# === Configuração de logging ===
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 
 # === Variáveis de ambiente (Railway → Variables) ===
 TYPEBOT_API = os.getenv("TYPEBOT_API")   # Ex: https://typebot.io/api/v1
@@ -17,6 +27,7 @@ ADMIN_WHATSAPP = os.getenv("ADMIN_WHATSAPP")  # Seu número WhatsApp com prefixo
 twilio_client = Client(TWILIO_SID, TWILIO_AUTH)
 
 
+# ---------------- Funções auxiliares ----------------
 def send_whatsapp(msg: str):
     """Envia mensagem para o WhatsApp via Twilio"""
     try:
@@ -25,80 +36,111 @@ def send_whatsapp(msg: str):
             from_=f"whatsapp:{TWILIO_FROM}",
             to=f"whatsapp:{ADMIN_WHATSAPP}"
         )
+        logging.info("📲 Mensagem enviada ao WhatsApp")
     except Exception as e:
-        print(f"❌ Erro ao enviar WhatsApp: {e}")
+        logging.error(f"❌ Erro ao enviar WhatsApp: {e}")
 
 
 def carregar_links_typebot():
-    """Busca os links do flow no Typebot"""
+    """Busca os links do flow no Typebot (para debug/validação externa)"""
     try:
         url = f"{TYPEBOT_API}/bots/{TYPEBOT_FLOW_ID}"
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         data = r.json()
 
-        links = []
-        for block in data.get("blocks", []):
-            if block.get("type") == "redirect":
-                links.append(block["content"]["url"])
+        links = [
+            block["content"]["url"]
+            for block in data.get("blocks", [])
+            if block.get("type") == "redirect"
+        ]
         return links
 
     except Exception as e:
-        print(f"❌ Erro ao carregar links do Typebot: {e}")
+        logging.error(f"❌ Erro ao carregar links do Typebot: {e}")
         send_whatsapp(f"⚠️ Erro ao carregar links do Typebot: {e}")
         return []
 
 
 def get_bots_from_db():
-    """Carrega os bots do banco"""
-    ativos = Bot.query.filter_by(status="ativo").all()
-    reserva = Bot.query.filter_by(status="reserva").all()
-    return ativos, reserva
+    """Carrega os bots do banco e separa por status"""
+    try:
+        ativos = Bot.query.filter_by(status="ativo").all()
+        reserva = Bot.query.filter_by(status="reserva").all()
+        return ativos, reserva
+    except SQLAlchemyError as e:
+        logging.error(f"❌ Erro ao consultar banco: {e}")
+        return [], []
 
 
-def monitor_loop():
-    print("🔄 Carregando bots do banco...")
+# ---------------- Loop principal ----------------
+def monitor_loop(interval: int = 60):
+    """Loop de monitoramento dos bots"""
+    logging.info("🔄 Carregando bots do banco...")
     ativos, reserva = get_bots_from_db()
 
     if not ativos and reserva:
-        # Ativa os dois primeiros, se não houver ativos
+        # Ativa os dois primeiros da reserva
         for bot in reserva[:2]:
-            bot.status = "ativo"
-        db.session.commit()
-        ativos, reserva = get_bots_from_db()
+            bot.mark_active()
+        try:
+            db.session.commit()
+            ativos, reserva = get_bots_from_db()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logging.error(f"❌ Erro ao ativar bots iniciais: {e}")
 
-    print(f"✅ Monitoramento iniciado | Ativos: {len(ativos)} | Reserva: {len(reserva)}")
+    logging.info(f"✅ Monitoramento iniciado | Ativos: {len(ativos)} | Reserva: {len(reserva)}")
     send_whatsapp("🚀 Monitor do Typebot iniciado com sucesso!")
 
     while True:
         for bot in list(ativos):
-            print(f"🔎 Checando bot {bot.name} → {bot.redirect_url}")
-            if not check_link(bot.redirect_url):
-                bot.failures += 1
-                db.session.commit()
+            logging.info(f"🔎 Checando bot {bot.name} → {bot.redirect_url}")
 
-                send_whatsapp(f"⚠️ Bot caiu!\n\n"
-                              f"Nome: {bot.name}\n"
-                              f"URL: {bot.redirect_url}\n"
-                              f"Falhas: {bot.failures}")
+            if check_link(bot.redirect_url):
+                bot.reset_failures()
+                try:
+                    db.session.commit()
+                except SQLAlchemyError as e:
+                    db.session.rollback()
+                    logging.error(f"❌ Erro ao salvar status OK no banco: {e}")
+                continue
 
-                # Desativa o bot
-                bot.status = "inativo"
-                db.session.commit()
-                ativos.remove(bot)
+            # Se não passou no check
+            bot.increment_failure()
+            logging.warning(f"⚠️ Falha detectada no bot {bot.name} ({bot.failures}x)")
+            send_whatsapp(f"⚠️ Bot com problema!\n\n"
+                          f"Nome: {bot.name}\n"
+                          f"URL: {bot.redirect_url}\n"
+                          f"Falhas: {bot.failures}")
+
+            if bot.failures >= 3:  # Exemplo: troca só após 3 falhas
+                bot.mark_reserve()
+                try:
+                    db.session.commit()
+                except SQLAlchemyError as e:
+                    db.session.rollback()
+                    logging.error(f"❌ Erro ao atualizar bot {bot.name} como reserva: {e}")
+                if bot in ativos:
+                    ativos.remove(bot)
 
                 if reserva:
                     novo = reserva.pop(0)
-                    novo.status = "ativo"
-                    db.session.commit()
-                    ativos.append(novo)
-                    send_whatsapp(f"🔄 Substituído automaticamente!\n\n"
-                                  f"Novo Ativo: {novo.name}\nURL: {novo.redirect_url}")
+                    novo.mark_active()
+                    try:
+                        db.session.commit()
+                        ativos.append(novo)
+                        send_whatsapp(f"🔄 Substituído automaticamente!\n\n"
+                                      f"Novo Ativo: {novo.name}\nURL: {novo.redirect_url}")
+                    except SQLAlchemyError as e:
+                        db.session.rollback()
+                        logging.error(f"❌ Erro ao ativar novo bot {novo.name}: {e}")
                 else:
                     send_whatsapp("❌ Não há mais bots na reserva!")
 
-        time.sleep(60)  # checa a cada 60s
+        time.sleep(interval)
 
 
+# ---------------- EntryPoint ----------------
 if __name__ == "__main__":
     monitor_loop()
