@@ -1,23 +1,45 @@
-# --- Framework Web ---
+# =======================
+# Framework Web
+# =======================
 Flask==3.0.3
 Flask-SQLAlchemy==3.1.1
 Flask-Migrate==4.0.7
+Werkzeug==3.0.4         # Compatibilidade avançada com Flask
 
-# --- Banco de Dados (Postgres) ---
-psycopg2-binary==2.9.9
+# =======================
+# Banco de Dados (Postgres)
+# =======================
 SQLAlchemy==2.0.36
+psycopg2-binary==2.9.9
+alembic==1.14.0         # Base do Flask-Migrate para migrations avançadas
+sqlalchemy-utils==0.41.2  # Tipos e utilitários extras (JSON, UUID, IP, etc)
 
-# --- Servidor de Produção ---
+# =======================
+# Servidor de Produção
+# =======================
 gunicorn==23.0.0
-gevent==24.2.1        # Worker assíncrono para alta concorrência
-greenlet==3.1.1       # Otimização para SQLAlchemy
+gevent==24.2.1           # Worker assíncrono para alta concorrência
+greenlet==3.1.1          # Otimização de corrotinas para SQLAlchemy
+uvicorn==0.31.0          # Alternativa ASGI (debug/testes mais rápidos)
 
-# --- Integrações ---
+# =======================
+# Integrações
+# =======================
 requests==2.32.3
 twilio==9.2.3
-python-dotenv==1.0.1  # para rodar com .env local
+python-dotenv==1.0.1     # Gerenciamento de .env local
 
-# --- Observabilidade / Logs ---
+# =======================
+# Observabilidade / Logs
+# =======================
 prometheus-client==0.21.0
-structlog==24.4.0     # Logs estruturados para monitoramento avançado
-sentry-sdk==2.18.0    # Observabilidade e rastreio de erros em produção
+structlog==24.4.0        # Logs estruturados (JSON/Key-Value)
+sentry-sdk==2.18.0       # Monitoramento e rastreio de erros
+loguru==0.7.2            # Logging simplificado e avançado
+
+# =======================
+# Performance / Segurança
+# =======================
+cachetools==5.5.0        # Cache em memória para otimizar consultas
+redis==5.1.1             # Para filas, cache e escalabilidade futura
+cryptography==43.0.3     # Criptografia moderna (tokens/segurança)
