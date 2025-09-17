@@ -7,48 +7,54 @@ db = SQLAlchemy()
 class Bot(db.Model):
     __tablename__ = "bots"
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False, unique=True)    # Nome único do bot
-    token = db.Column(db.String(200), nullable=True)                 # Token do Telegram (opcional)
-    redirect_url = db.Column(db.String(500), nullable=False)         # URL de redirecionamento
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)     # Nome único do bot
+    token = db.Column(db.String(200), nullable=True)                  # Token do Telegram (opcional)
+    redirect_url = db.Column(db.String(500), nullable=False)          # URL de redirecionamento
 
-    status = db.Column(db.String(20), default="reserva", index=True) # ativo / reserva
-    failures = db.Column(db.Integer, default=0, index=True)          # contador de falhas consecutivas
+    status = db.Column(db.String(20), default="reserva", index=True)  # ativo / reserva
+    failures = db.Column(db.Integer, default=0, index=True)           # contador de falhas consecutivas
 
     # Campos extras para monitoramento
-    last_ok = db.Column(db.DateTime, nullable=True)                  # última vez que o bot respondeu OK
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)     # quando foi adicionado
+    last_ok = db.Column(db.DateTime, nullable=True)                   # última vez que o bot respondeu OK
+    created_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           nullable=False)                            # quando foi adicionado
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
-                           onupdate=datetime.utcnow)                 # última atualização
+                           onupdate=datetime.utcnow, nullable=False)  # última atualização
 
     # Constraints extras para performance e integridade
     __table_args__ = (
         UniqueConstraint("redirect_url", name="uq_bot_redirect_url"),
         Index("idx_status_failures", "status", "failures"),
+        {"sqlite_autoincrement": True},  # garante IDs consistentes em SQLite
     )
 
     # ---------- Métodos utilitários ----------
-    def mark_active(self):
+    def mark_active(self) -> None:
         """Marca o bot como ativo e reseta falhas"""
         self.status = "ativo"
         self.failures = 0
         self.last_ok = datetime.utcnow()
+        self.touch()
 
-    def mark_reserve(self):
+    def mark_reserve(self) -> None:
         """Rebaixa o bot para reserva"""
         self.status = "reserva"
         self.failures = 0
+        self.touch()
 
-    def increment_failure(self):
+    def increment_failure(self) -> None:
         """Incrementa falhas quando o bot não responde"""
-        self.failures += 1
+        self.failures = (self.failures or 0) + 1
+        self.touch()
 
-    def reset_failures(self):
+    def reset_failures(self) -> None:
         """Reseta falhas e atualiza último OK"""
         self.failures = 0
         self.last_ok = datetime.utcnow()
+        self.touch()
 
-    def touch(self):
+    def touch(self) -> None:
         """Atualiza timestamp de updated_at"""
         self.updated_at = datetime.utcnow()
 
@@ -70,3 +76,7 @@ class Bot(db.Model):
                 "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             })
         return base
+
+    # ---------- Representação ----------
+    def __repr__(self) -> str:
+        return f"<Bot id={self.id} name='{self.name}' status='{self.status}' failures={self.failures}>"
