@@ -1,4 +1,4 @@
-# app.py (versão final com Flask-Migrate e robustez para alta escala)
+# app.py (versão avançada, sincronizado e escalável)
 import os
 import threading
 import time
@@ -26,16 +26,16 @@ app.secret_key = os.getenv("SECRET_KEY", "change_me_random")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# Integração Flask-Migrate
+# Integração Flask-Migrate (migrações controladas)
 db.init_app(app)
 migrate = Migrate(app, db)
 
 # ---------- Configurações ----------
-MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL", "60"))
-FAIL_THRESHOLD = int(os.getenv("FAIL_THRESHOLD", "3"))
-CHECK_TIMEOUT = float(os.getenv("CHECK_TIMEOUT", "7.0"))
-MAX_LOGS = int(os.getenv("MAX_LOGS", "300"))
-MAX_WORKERS = int(os.getenv("MONITOR_MAX_WORKERS", "8"))
+MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL", "60"))   # intervalo entre checks
+FAIL_THRESHOLD = int(os.getenv("FAIL_THRESHOLD", "3"))        # falhas antes do swap
+CHECK_TIMEOUT = float(os.getenv("CHECK_TIMEOUT", "7.0"))      # timeout requests
+MAX_LOGS = int(os.getenv("MAX_LOGS", "300"))                  # limite histórico de logs
+MAX_WORKERS = int(os.getenv("MONITOR_MAX_WORKERS", "8"))      # threads simultâneas
 
 # ---------- Logs ----------
 monitor_logs: List[str] = []
@@ -58,7 +58,7 @@ metrics = {
     "bots_reserve": 0,
 }
 
-# Locks por bot
+# Locks por bot para evitar swap duplicado
 bot_locks = {}
 
 # ---------- Sessão requests com retry ----------
@@ -252,5 +252,5 @@ def start_monitor_thread():
 start_monitor_thread()
 
 if __name__ == "__main__":
-    # Não criamos tabelas automaticamente; usamos `flask db migrate/upgrade`
+    # Banco só é alterado via flask db migrate/upgrade
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=os.getenv("DEBUG", "True") == "True")
