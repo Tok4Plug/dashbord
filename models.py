@@ -19,16 +19,18 @@ class Bot(db.Model):
 
     # ---------- Monitoramento ----------
     last_ok = db.Column(db.DateTime, nullable=True, index=True)                # última resposta OK
-    created_at = db.Column(db.DateTime, default=datetime.utcnow,
-                           nullable=False, index=True)                         # quando foi criado
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
-                           onupdate=datetime.utcnow, nullable=False, index=True)
+    created_at = db.Column(
+        db.DateTime, default=datetime.utcnow, nullable=False, index=True
+    )                                                                          # quando foi criado
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, index=True
+    )                                                                          # última atualização
 
     # ---------- Constraints extras ----------
     __table_args__ = (
         UniqueConstraint("redirect_url", name="uq_bot_redirect_url"),
         Index("idx_status_failures", "status", "failures"),
-        {"sqlite_autoincrement": True},
+        {"sqlite_autoincrement": True},  # garante IDs consistentes em SQLite
     )
 
     # ---------- Métodos utilitários ----------
@@ -106,5 +108,7 @@ class Bot(db.Model):
 
     # ---------- Representação ----------
     def __repr__(self) -> str:
-        return (f"<Bot id={self.id} name='{self.name}' "
-                f"status='{self.status}' failures={self.failures}>")
+        return (
+            f"<Bot id={self.id} name='{self.name}' "
+            f"status='{self.status}' failures={self.failures}>"
+        )

@@ -1,4 +1,4 @@
-# app.py (versão avançada, sincronizado e escalável)
+# app.py (versão avançada, sincronizada e escalável)
 import os
 import threading
 import time
@@ -23,10 +23,16 @@ logger = logging.getLogger("bot-monitor")
 
 app = Flask(__name__, template_folder="templates")
 app.secret_key = os.getenv("SECRET_KEY", "change_me_random")
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
+
+# Configuração do banco de dados
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("❌ DATABASE_URL não definido. Configure no Railway/ENV.")
+
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# Integração Flask-Migrate (migrações controladas)
+# Integração Flask-Migrate
 db.init_app(app)
 migrate = Migrate(app, db)
 
@@ -58,7 +64,7 @@ metrics = {
     "bots_reserve": 0,
 }
 
-# Locks por bot para evitar swap duplicado
+# Locks por bot (evita swaps duplos)
 bot_locks = {}
 
 # ---------- Sessão requests com retry ----------
