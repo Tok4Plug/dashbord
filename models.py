@@ -1,7 +1,11 @@
+# ================================
+# models.py (versão final robusta)
+# ================================
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Index, UniqueConstraint, func
 
+# Inicializa o SQLAlchemy
 db = SQLAlchemy()
 
 
@@ -10,27 +14,39 @@ class Bot(db.Model):
 
     # ---------- Colunas principais ----------
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column(db.String(100), nullable=False, unique=True, index=True)  # Nome único + index
-    token = db.Column(db.String(255), nullable=True)                           # Token opcional
-    redirect_url = db.Column(db.String(500), nullable=False, index=True)       # URL de redirecionamento
 
-    status = db.Column(db.String(20), default="reserva", index=True)           # ativo / reserva
-    failures = db.Column(db.Integer, default=0, index=True)                    # contador de falhas
+    # Nome único + index para evitar duplicação
+    name = db.Column(db.String(100), nullable=False, unique=True, index=True)
+
+    # Token opcional (alguns bots podem não precisar)
+    token = db.Column(db.String(255), nullable=True)
+
+    # URL obrigatória (não pode ser NULL) + índice para busca rápida
+    redirect_url = db.Column(db.String(500), nullable=False, index=True)
+
+    # Status padrão "reserva" (opções: ativo, reserva, inativo, etc.)
+    status = db.Column(db.String(20), default="reserva", index=True)
+
+    # Contador de falhas (para o monitor saber quando substituir)
+    failures = db.Column(db.Integer, default=0, index=True)
 
     # ---------- Monitoramento ----------
-    last_ok = db.Column(db.DateTime, nullable=True, index=True)                # última resposta OK
+    # Última resposta OK
+    last_ok = db.Column(db.DateTime, nullable=True, index=True)
+
+    # Datas automáticas
     created_at = db.Column(
         db.DateTime, default=datetime.utcnow, nullable=False, index=True
-    )                                                                          # quando foi criado
+    )
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, index=True
-    )                                                                          # última atualização
+    )
 
     # ---------- Constraints extras ----------
     __table_args__ = (
-        UniqueConstraint("redirect_url", name="uq_bot_redirect_url"),
-        Index("idx_status_failures", "status", "failures"),
-        {"sqlite_autoincrement": True},  # garante IDs consistentes em SQLite
+        UniqueConstraint("redirect_url", name="uq_bot_redirect_url"),  # único por URL
+        Index("idx_status_failures", "status", "failures"),             # índice composto
+        {"sqlite_autoincrement": True},                                # IDs consistentes em SQLite
     )
 
     # ---------- Métodos utilitários ----------
