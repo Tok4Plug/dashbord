@@ -2,107 +2,94 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8">
-  <title>Dashboard - Monitor Bots</title>
+  <title>Dashboard - TOK4 PLUG</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    :root{
-      --bg:#0e0519;
-      --panel:#1a0f2b;
+    :root {
+      --bg:#0b0312;
+      --panel:#181028;
       --accent:#7b2cff;
       --accent-2:#9b55ff;
       --muted:#9aa0a6;
-      --card:#241534;
+      --card:#221533;
       --ok:#22c55e;
       --warn:#ffb020;
       --danger:#ff4d6d;
       font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
     }
-    body{background:linear-gradient(180deg,#0b0312 0%, #18092b 100%); color:#fff; margin:0; padding:20px;}
-    .container{max-width:1200px; margin:0 auto;}
-    header{display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;}
-    h1{font-weight:800; color:var(--accent); margin:0; font-size:28px;}
-    .top-actions{display:flex; gap:12px;}
-    button.primary{
+    body { background:var(--bg); color:#fff; margin:0; padding:20px; }
+    .container { max-width:1200px; margin:0 auto; }
+    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+    h1 { font-weight:800; color:var(--accent); margin:0; font-size:28px; }
+    .top-actions { display:flex; gap:12px; }
+    button {
+      border:0; padding:8px 14px; border-radius:8px; cursor:pointer;
+      transition:all .2s; font-weight:600;
+    }
+    button.primary {
       background:linear-gradient(90deg,var(--accent),var(--accent-2));
-      border:0; color:#fff; padding:8px 14px; border-radius:8px; cursor:pointer;
-      transition:opacity .2s;
+      color:#fff;
     }
-    button.primary:hover{opacity:.85}
-    button.ghost{
-      background:transparent; border:1px solid rgba(255,255,255,0.08);
-      color:var(--muted); padding:6px 12px; border-radius:8px; cursor:pointer;
-      transition:all .2s;
+    button.primary:hover { transform:scale(1.05); }
+    button.ghost {
+      background:transparent; border:1px solid rgba(255,255,255,0.08); color:var(--muted);
     }
-    button.ghost:hover{border-color:var(--accent-2); color:#fff}
-    .stats{display:flex; gap:14px; margin-bottom:16px; flex-wrap:wrap;}
-    .stat{background:var(--card); padding:14px; border-radius:12px; flex:1; min-width:160px;}
-    .stat .label{font-size:13px;color:var(--muted)}
-    .stat .value{font-size:22px;font-weight:700;margin-top:4px}
-    .panel{background:var(--panel); padding:18px; border-radius:12px;}
-    table{width:100%; border-collapse:collapse; margin-top:12px; color:#fff;}
-    th,td{padding:10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.05);}
-    th{color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:0.5px;}
-    .pill{padding:5px 10px; border-radius:999px; font-size:12px; font-weight:600;}
-    .activo{background:rgba(34,197,94,0.12); color:var(--ok); border:1px solid rgba(34,197,94,0.18);}
-    .reserva{background:rgba(155,85,255,0.12); color:var(--accent-2); border:1px solid rgba(155,85,255,0.18);}
-    .danger{color:var(--danger)}
-    .actions button{margin-right:4px; font-size:14px;}
-    .logs{margin-top:16px; background:#12081d; padding:12px; border-radius:10px; max-height:260px; overflow-y:auto; font-size:13px; color:#cfcfe5; line-height:1.5;}
-    .logs div.warn{color:var(--warn)}
-    .logs div.ok{color:var(--ok)}
-    .logs div.error{color:var(--danger)}
-    .edit-form{display:flex; gap:8px;}
-    input,select{
-      background:transparent; border:1px solid rgba(255,255,255,0.08);
-      color:#fff; padding:8px 10px; border-radius:6px; width:100%;
+    button.ghost:hover { border-color:var(--accent-2); color:#fff; }
+    .stats { display:flex; gap:14px; margin-bottom:16px; flex-wrap:wrap; }
+    .stat { background:var(--card); padding:14px; border-radius:12px; flex:1; min-width:160px; }
+    .stat .label { font-size:13px; color:var(--muted); }
+    .stat .value { font-size:22px; font-weight:700; margin-top:4px; }
+    .panel { background:var(--panel); padding:18px; border-radius:12px; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; color:#fff; font-size:14px; }
+    th,td { padding:10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.05); }
+    th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0.5px; }
+    .pill { padding:5px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+    .activo { background:rgba(34,197,94,0.12); color:var(--ok); border:1px solid rgba(34,197,94,0.18); }
+    .reserva { background:rgba(155,85,255,0.12); color:var(--accent-2); border:1px solid rgba(155,85,255,0.18); }
+    .danger { color:var(--danger); }
+    .logs { margin-top:16px; background:#12081d; padding:12px; border-radius:10px; max-height:260px; overflow-y:auto; font-size:13px; color:#cfcfe5; line-height:1.5; }
+    .logs div.warn { color:var(--warn); }
+    .logs div.ok { color:var(--ok); }
+    .logs div.error { color:var(--danger); }
+    input,select {
+      background:var(--card); border:1px solid rgba(255,255,255,0.15); color:#fff;
+      padding:10px; border-radius:6px; width:100%; font-size:14px;
     }
-    select{background-color:var(--card)}
-    .modal{
-      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6);
+    select { cursor:pointer; }
+    .modal {
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7);
       align-items:center; justify-content:center; z-index:1000;
     }
-    .modal-content{
-      background:var(--panel); padding:18px; border-radius:12px; width:420px;
+    .modal-content {
+      background:var(--panel); padding:20px; border-radius:12px; width:420px; box-shadow:0 6px 30px rgba(0,0,0,.5);
     }
-    .modal h3{margin:0 0 12px; font-size:18px; font-weight:700;}
-    .modal .actions{display:flex; justify-content:flex-end; gap:10px; margin-top:14px;}
+    .modal h3 { margin:0 0 12px; font-size:18px; font-weight:700; }
+    .modal .actions { display:flex; justify-content:flex-end; gap:10px; margin-top:14px; }
   </style>
 </head>
 <body>
   <div class="container">
-<header>
-  <h1>TOK4 <span style="color:var(--accent-2)">PLUG</span></h1>
-  <div class="top-actions">
-    <button class="primary" id="btn-open-add">➕ Adicionar Bot</button>
-    <button class="ghost" id="btn-refresh">🔄 Atualizar</button>
-  </div>
-</header>
+    <header>
+      <h1>TOK4 <span style="color:var(--accent-2)">PLUG</span></h1>
+      <div class="top-actions">
+        <button class="primary" id="btn-open-add">➕ Adicionar Bot</button>
+        <button class="ghost" id="btn-refresh">🔄 Atualizar</button>
+      </div>
+    </header>
 
     <div class="stats">
-      <div class="stat">
-        <div class="label">Ativos</div>
-        <div id="count-ativos" class="value">0</div>
-      </div>
-      <div class="stat">
-        <div class="label">Reserva</div>
-        <div id="count-reserva" class="value">0</div>
-      </div>
-      <div class="stat">
-        <div class="label">Última ação</div>
-        <div id="last-action" class="value">—</div>
-      </div>
+      <div class="stat"><div class="label">Ativos</div><div id="count-ativos" class="value">0</div></div>
+      <div class="stat"><div class="label">Reserva</div><div id="count-reserva" class="value">0</div></div>
+      <div class="stat"><div class="label">Última ação</div><div id="last-action" class="value">—</div></div>
     </div>
 
     <div class="panel">
       <table>
         <thead>
-          <tr>
-            <th>ID</th><th>Nome</th><th>Token</th><th>Redirect</th><th>Status</th><th>Falhas</th><th>Ações</th>
-          </tr>
+          <tr><th>ID</th><th>Nome</th><th>Token</th><th>Redirect</th><th>Status</th><th>Falhas</th><th>Ações</th></tr>
         </thead>
         <tbody id="bots-tbody"></tbody>
       </table>
-
       <div class="logs" id="logs"></div>
     </div>
 
@@ -110,10 +97,10 @@
     <div class="modal" id="modal">
       <div class="modal-content">
         <h3 id="modal-title">Adicionar Bot</h3>
-        <div style="display:flex;flex-direction:column; gap:8px;">
-          <input id="f-name" type="text" placeholder="Nome">
-          <input id="f-token" type="text" placeholder="Token (opcional)">
-          <input id="f-redirect" type="text" placeholder="Redirect URL (https://...)">
+        <div style="display:flex;flex-direction:column; gap:10px;">
+          <input id="f-name" type="text" placeholder="Nome do Bot">
+          <input id="f-token" type="text" placeholder="Token do Bot (opcional)">
+          <input id="f-redirect" type="url" placeholder="Redirect URL (https://...)">
           <select id="f-status">
             <option value="ativo">Ativo</option>
             <option value="reserva">Reserva</option>
@@ -139,14 +126,13 @@
   }
 
   function renderTable(bots){
-    const tbody = qs("#bots-tbody");
-    tbody.innerHTML = "";
+    const tbody = qs("#bots-tbody"); tbody.innerHTML="";
     let ativos=0,reserva=0;
     bots.forEach(b=>{
       if(b.status==="ativo") ativos++; else reserva++;
       const statusClass = b.status==="ativo" ? "activo":"reserva";
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
+      const tr=document.createElement("tr");
+      tr.innerHTML=`
         <td>${b.id}</td>
         <td>${escapeHtml(b.name)}</td>
         <td>${escapeHtml(b.token||"")}</td>
@@ -157,8 +143,7 @@
           <button class="ghost" onclick="openEdit(${b.id})">✏️</button>
           <button class="ghost" onclick="forceSwap(${b.id})">🔁</button>
           <button class="ghost" onclick="deleteBot(${b.id})">🗑️</button>
-        </td>
-      `;
+        </td>`;
       tbody.appendChild(tr);
     });
     qs("#count-ativos").innerText=ativos;
@@ -166,14 +151,10 @@
   }
 
   function renderLogs(logs){
-    const box = qs("#logs");
-    box.innerHTML="";
+    const box=qs("#logs"); box.innerHTML="";
     logs.forEach(l=>{
       let cls=""; if(l.includes("⚠️")) cls="warn"; if(l.includes("✅")) cls="ok"; if(l.includes("❌")) cls="error";
-      const div=document.createElement("div");
-      div.className=cls;
-      div.innerText=l;
-      box.appendChild(div);
+      const div=document.createElement("div"); div.className=cls; div.innerText=l; box.appendChild(div);
     });
     box.scrollTop=box.scrollHeight;
   }
@@ -198,20 +179,20 @@
 
   async function saveBot(){
     const body={name:qs("#f-name").value.trim(),token:qs("#f-token").value.trim(),redirect_url:qs("#f-redirect").value.trim(),status:qs("#f-status").value};
-    if(!body.name||!body.redirect_url) return alert("Nome e redirect são obrigatórios");
-    if(editingId){await fetch(`/api/bot/${editingId}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});}
-    else{await fetch("/api/bot",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});}
+    if(!body.name||!body.redirect_url) return alert("Nome e Redirect são obrigatórios");
+    if(editingId){await fetch(`/api/bots/${editingId}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});}
+    else{await fetch("/api/bots",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});}
     closeModal();refreshData();
   }
-  async function deleteBot(id){if(!confirm("Excluir este bot?")) return;await fetch(`/api/bot/${id}/delete`,{method:"POST"});refreshData();}
-  async function forceSwap(id){if(!confirm("Forçar troca deste bot?")) return;await fetch(`/api/force_swap/${id}`,{method:"POST"});refreshData();}
+  async function deleteBot(id){if(!confirm("Excluir este bot?")) return;await fetch(`/api/bots/${id}`,{method:"DELETE"});refreshData();}
+  async function forceSwap(id){if(!confirm("Forçar troca deste bot?")) return;await fetch(`/api/bots/${id}/force_swap`,{method:"POST"});refreshData();}
 
   // binds
   qs("#btn-open-add").addEventListener("click",openAdd);
   qs("#btn-refresh").addEventListener("click",refreshData);
 
   // inicial
-  refreshData(); setInterval(refreshData,15000); // atualiza a cada 15s
+  refreshData(); setInterval(refreshData,15000);
 </script>
 </body>
 </html>
