@@ -1,5 +1,5 @@
 # ================================
-# app.py (monitor full + alertas detalhados + métricas completas)
+# app.py (monitor full + auxiliares + alertas detalhados + métricas completas)
 # ================================
 import os, sys, threading, time, logging, urllib.parse
 from datetime import datetime
@@ -33,17 +33,19 @@ db.init_app(app)
 migrate = Migrate(app, db)
 
 # ---------- Parâmetros ----------
-MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL", "60"))
-FAIL_THRESHOLD   = int(os.getenv("FAIL_THRESHOLD", "3"))
-CHECK_TIMEOUT    = float(os.getenv("CHECK_TIMEOUT", "7.0"))
-MAX_LOGS         = int(os.getenv("MAX_LOGS", "300"))
-MAX_WORKERS      = int(os.getenv("MONITOR_MAX_WORKERS", "8"))
-START_MONITOR    = os.getenv("START_MONITOR", "1")
+MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL", "60"))   # intervalo do loop
+FAIL_THRESHOLD   = int(os.getenv("FAIL_THRESHOLD", "3"))      # nº de falhas antes de trocar
+CHECK_TIMEOUT    = float(os.getenv("CHECK_TIMEOUT", "7.0"))   # timeout da requisição
+MAX_LOGS         = int(os.getenv("MAX_LOGS", "300"))          # nº máx de logs armazenados
+MAX_WORKERS      = int(os.getenv("MONITOR_MAX_WORKERS", "8")) # threads em paralelo
+START_MONITOR    = os.getenv("START_MONITOR", "1")            # inicia monitor automático
 
+# ---------- Alertas ----------
 ALERT_ON_FIRST_FAIL   = os.getenv("ALERT_ON_FIRST_FAIL", "1") == "1"
 ALERT_COOLDOWN_MIN    = int(os.getenv("ALERT_COOLDOWN_MINUTES", "30"))
 ALERT_SUMMARY_ON_SWAP = os.getenv("ALERT_SUMMARY_ON_SWAP", "1") == "1"
 
+# Evitar rodar monitor em migrations
 if os.getenv("FLASK_RUN_FROM_CLI") == "true" or "flask" in (sys.argv[0] if sys.argv else "").lower():
     START_MONITOR = "0"
 
@@ -199,13 +201,13 @@ def swap_bot(failed_bot_id: int):
             with session.begin():
                 fb = session.get(Bot, failed_bot_id)
                 if not fb: return
-                fb.status, fb.failures = "reserva", 0
+                fb.status, fb.failures, fb.last_reason = "reserva", 0, "trocado para reserva"
                 replacement = session.query(Bot).filter(Bot.status=="reserva", Bot.id!=fb.id).order_by(Bot.updated_at.asc()).first()
                 if not replacement:
                     send_whatsapp_message_text(None, f"❌ {fb.name} caiu e não há reservas!")
                     metrics["switch_errors_total"] += 1
                     return
-                replacement.status, replacement.failures, replacement.last_ok = "ativo", 0, datetime.utcnow()
+                replacement.status, replacement.failures, replacement.last_ok, replacement.last_reason = "ativo", 0, datetime.utcnow(), "substituto ativado"
             metrics["switches_total"] += 1
             add_log(f"🔁 Swap: {fb.name} ❌ → {replacement.name} ✅")
             _clear_alert_state(fb.id)
@@ -230,11 +232,12 @@ def check_and_maybe_swap(bot_id: int):
         with db.session.begin():
             bot = db.session.get(Bot, bot_id)
             if ok:
-                bot.failures, bot.last_ok, bot.updated_at = 0, datetime.utcnow(), datetime.utcnow()
+                bot.failures, bot.last_ok, bot.updated_at, bot.last_reason = 0, datetime.utcnow(), datetime.utcnow(), "OK"
                 _clear_alert_state(bot.id)
             else:
                 bot.failures = (bot.failures or 0) + 1
                 bot.updated_at = datetime.utcnow()
+                bot.last_reason = reason
                 metrics["failures_total"] += 1
                 if bot.failures == 1 and _should_alert_now(bot.id):
                     notify_bot_down(b, bot.failures, reason)
@@ -282,6 +285,7 @@ def api_get_bots():
 # ---------- Bootstrap ----------
 PATCH_SQL = """
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_ok TIMESTAMP NULL;
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_reason TEXT NULL;
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW();
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
 """
