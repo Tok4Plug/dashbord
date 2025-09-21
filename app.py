@@ -1,9 +1,10 @@
 # ================================
-# app.py (versão avançada + REST sync)
+# app.py (versão avançada + REST sync + alertas)
 # ================================
 import os, sys, threading, time, logging, urllib.parse
 from datetime import datetime
 from typing import List, Optional
+from collections import defaultdict
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -40,6 +41,10 @@ MAX_LOGS         = int(os.getenv("MAX_LOGS", "300"))
 MAX_WORKERS      = int(os.getenv("MONITOR_MAX_WORKERS", "8"))
 START_MONITOR    = os.getenv("START_MONITOR", "1")
 
+ALERT_ON_FIRST_FAIL   = os.getenv("ALERT_ON_FIRST_FAIL", "1") == "1"
+ALERT_COOLDOWN_MIN    = int(os.getenv("ALERT_COOLDOWN_MINUTES", "30"))
+ALERT_SUMMARY_ON_SWAP = os.getenv("ALERT_SUMMARY_ON_SWAP", "1") == "1"
+
 if os.getenv("FLASK_RUN_FROM_CLI") == "true" or "flask" in (sys.argv[0] if sys.argv else "").lower():
     START_MONITOR = "0"
 
@@ -70,6 +75,82 @@ def make_requests_session():
     return session
 requests_session = make_requests_session()
 
+# ---------- Notificações ----------
+def _get_admin_whatsapps() -> List[str]:
+    v = os.getenv("ADMIN_WHATSAPP", "")
+    return [p.strip() for p in v.split(",") if p.strip()]
+
+def send_whatsapp_message_text(to_number: Optional[str], text_msg: str) -> bool:
+    TWILIO_SID  = os.getenv("TWILIO_SID")
+    TWILIO_AUTH = os.getenv("TWILIO_AUTH")
+    TWILIO_FROM = os.getenv("TWILIO_FROM")
+    CALLMEBOT_KEY = os.getenv("CALLMEBOT_KEY")
+    recipients = [to_number] if to_number else _get_admin_whatsapps()
+
+    if TWILIO_SID and TWILIO_AUTH and TWILIO_FROM and recipients:
+        try:
+            from twilio.rest import Client
+            client = Client(TWILIO_SID, TWILIO_AUTH)
+            for r in recipients:
+                client.messages.create(body=text_msg, from_=f"whatsapp:{TWILIO_FROM}", to=f"whatsapp:{r}")
+            add_log("Mensagem WhatsApp enviada via Twilio.")
+            return True
+        except Exception as e:
+            add_log(f"Erro Twilio: {e}")
+
+    if CALLMEBOT_KEY and recipients:
+        try:
+            for r in recipients:
+                url = (f"https://api.callmebot.com/whatsapp.php?"
+                       f"phone={urllib.parse.quote_plus(r)}&text={urllib.parse.quote_plus(text_msg)}&apikey={CALLMEBOT_KEY}")
+                requests_session.get(url, timeout=10)
+            add_log("Mensagem WhatsApp enviada via CallMeBot.")
+            return True
+        except Exception as e:
+            add_log(f"Erro CallMeBot: {e}")
+
+    return False
+
+# ---------- Alertas com cooldown ----------
+alerts_lock = threading.Lock()
+down_alert_last_at = defaultdict(lambda: None)
+
+def _should_alert_now(bot_id: int) -> bool:
+    if not ALERT_ON_FIRST_FAIL: return False
+    now = datetime.utcnow()
+    with alerts_lock:
+        last = down_alert_last_at.get(bot_id)
+        if last is None or (now - last).total_seconds() >= ALERT_COOLDOWN_MIN * 60:
+            down_alert_last_at[bot_id] = now
+            return True
+    return False
+
+def _clear_alert_state(bot_id: int):
+    with alerts_lock:
+        if bot_id in down_alert_last_at:
+            del down_alert_last_at[bot_id]
+
+def notify_bot_down(bot: Bot, failures: int):
+    msg = (
+        f"⚠️ Bot possivelmente fora do ar\n"
+        f"• Nome: {bot.name}\n"
+        f"• Falhas: {failures}\n"
+        f"🕒 {datetime.utcnow().strftime('%H:%M:%S UTC')}"
+    )
+    send_whatsapp_message_text(None, msg)
+
+def notify_swap_summary(failed: Bot, replacement: Bot):
+    actives = db.session.query(Bot).filter_by(status="ativo").all()
+    reserves = db.session.query(Bot).filter_by(status="reserva").all()
+    msg = (
+        "🔁 Substituição executada\n"
+        f"❌ Caiu: {failed.name}\n"
+        f"✅ Entrou: {replacement.name}\n\n"
+        f"📊 Ativos: {len(actives)} | Reserva: {len(reserves)}"
+    )
+    if ALERT_SUMMARY_ON_SWAP:
+        send_whatsapp_message_text(None, msg)
+
 # ---------- Health check ----------
 def safe_check_token(token: str) -> bool:
     if not token: return False
@@ -92,12 +173,14 @@ def swap_bot(failed_bot_id: int):
                 fb.status, fb.failures = "reserva", 0
                 replacement = session.query(Bot).filter(Bot.status=="reserva", Bot.id!=fb.id).order_by(Bot.updated_at.asc()).first()
                 if not replacement:
-                    add_log(f"❌ {fb.name} caiu e não há reservas!")
+                    send_whatsapp_message_text(None, f"❌ {fb.name} caiu e não há reservas!")
                     metrics["switch_errors_total"] += 1
                     return
                 replacement.status, replacement.failures, replacement.last_ok = "ativo", 0, datetime.utcnow()
             metrics["switches_total"] += 1
             add_log(f"🔁 Swap: {fb.name} ❌ → {replacement.name} ✅")
+            _clear_alert_state(fb.id)
+            notify_swap_summary(fb, replacement)
     finally: lock.release()
 
 # ---------- Monitor ----------
@@ -107,19 +190,23 @@ def check_and_maybe_swap(bot_id: int):
         if not b: return
         ok = safe_check_token(b.token)
         metrics["checks_total"] += 1
-        add_log(f"Check {b.name}: TOKEN={'OK' if ok else 'FAIL'} → {'✅' if ok else '❌'}")
+        add_log(f"Check {b.name}: {'✅' if ok else '❌'}")
         with db.session.begin():
             bot = db.session.get(Bot, bot_id)
             if ok:
                 bot.failures, bot.last_ok, bot.updated_at = 0, datetime.utcnow(), datetime.utcnow()
+                _clear_alert_state(bot.id)
             else:
                 bot.failures = (bot.failures or 0) + 1
                 bot.updated_at = datetime.utcnow()
                 metrics["failures_total"] += 1
+                if bot.failures == 1 and _should_alert_now(bot.id):
+                    notify_bot_down(b, bot.failures)
                 if bot.failures >= FAIL_THRESHOLD:
                     threading.Thread(target=swap_bot, args=(bot.id,), daemon=True).start()
 
 def monitor_loop():
+    send_whatsapp_message_text(None, "🚀 Monitor iniciado.")
     add_log("🚀 Monitor iniciado.")
     while True:
         start_ts = time.time()
@@ -158,8 +245,6 @@ def api_create_bot():
     name, token, redirect_url = data.get("name","").strip(), data.get("token","").strip(), data.get("redirect_url","").strip()
     if not name or not redirect_url:
         return jsonify({"error":"name e redirect_url obrigatórios"}),400
-    if token and not safe_check_token(token):
-        return jsonify({"error":"token inválido"}),400
     with db.session.begin():
         bot = Bot(name=name, token=token or None, redirect_url=redirect_url, status=data.get("status","reserva"))
         db.session.add(bot)
@@ -199,7 +284,18 @@ def health(): return jsonify({"status":"ok",**metrics})
 def metrics_endpoint(): return jsonify(metrics)
 
 # ---------- Bootstrap ----------
-with app.app_context(): db.create_all()
+PATCH_SQL = """
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_ok TIMESTAMP NULL;
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW();
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
+"""
+with app.app_context():
+    try:
+        with db.engine.begin() as conn: conn.execute(text(PATCH_SQL))
+        add_log("✅ Auto-patch de schema aplicado.")
+    except Exception as e:
+        add_log(f"⚠️ Patch falhou: {e}")
+
 if START_MONITOR=="1": start_monitor_thread()
 
 if __name__=="__main__":
