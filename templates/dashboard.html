@@ -11,7 +11,7 @@
       --toast-bg:#2a1a3a; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
     }
     body { background:var(--bg); color:#fff; margin:0; padding:20px; }
-    .container { max-width:1280px; margin:0 auto; }
+    .container { max-width:1400px; margin:0 auto; }
     header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
     h1 { font-weight:800; color:var(--accent); margin:0; font-size:30px; letter-spacing:-0.5px; }
     .top-actions { display:flex; gap:12px; }
@@ -65,6 +65,7 @@
       <div class="stat"><div class="label">Última ação</div><div id="last-action" class="value">—</div></div>
       <div class="stat"><div class="label">Checagens</div><div id="checks-total" class="value">0</div></div>
       <div class="stat"><div class="label">Falhas</div><div id="failures-total" class="value">0</div></div>
+      <div class="stat"><div class="label">Trocas</div><div id="switches-total" class="value">0</div></div>
     </div>
 
     <div class="panel">
@@ -72,7 +73,7 @@
         <thead>
           <tr>
             <th>ID</th><th>Nome</th><th>Status</th><th>Saúde Detectada</th>
-            <th>Falhas</th><th>Último OK</th><th>Redirect</th><th>Ações</th>
+            <th>Falhas</th><th>Último OK</th><th>Última Razão</th><th>Redirect</th><th>Ações</th>
           </tr>
         </thead>
         <tbody id="bots-tbody"></tbody>
@@ -122,6 +123,7 @@
     if(data.last_action) qs("#last-action").innerText=new Date(data.last_action*1000).toLocaleString();
     qs("#checks-total").innerText=data.metrics.checks_total||0;
     qs("#failures-total").innerText=data.metrics.failures_total||0;
+    qs("#switches-total").innerText=data.metrics.switches_total||0;
   }
 
   function renderTable(bots){
@@ -138,6 +140,7 @@
         <td>${health}</td>
         <td class="${b.failures>0?'fail':''}">${b.failures||0}</td>
         <td>${b.last_ok ? new Date(b.last_ok).toLocaleString() : "—"}</td>
+        <td>${escapeHtml(b.last_reason||"—")}</td>
         <td><a href="${escapeAttr(b.redirect_url)}" target="_blank">${escapeHtml(b.redirect_url)}</a></td>
         <td>
           <button class="ghost" onclick="openEdit(${b.id})">✏️</button>
