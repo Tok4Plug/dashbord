@@ -1,5 +1,5 @@
 # ================================
-# app.py (versão avançada + REST sync + alertas)
+# app.py (versão full sync + alertas + métricas integradas)
 # ================================
 import os, sys, threading, time, logging, urllib.parse
 from datetime import datetime
@@ -62,6 +62,7 @@ metrics = {
     "checks_total": 0, "failures_total": 0,
     "switches_total": 0, "switch_errors_total": 0,
     "last_check_ts": None, "bots_active": 0, "bots_reserve": 0,
+    "monitor_running": False
 }
 
 # ---------- Sessão requests ----------
@@ -208,6 +209,7 @@ def check_and_maybe_swap(bot_id: int):
 def monitor_loop():
     send_whatsapp_message_text(None, "🚀 Monitor iniciado.")
     add_log("🚀 Monitor iniciado.")
+    metrics["monitor_running"] = True
     while True:
         start_ts = time.time()
         metrics["last_check_ts"] = int(start_ts)
@@ -234,9 +236,13 @@ def index():
 
 @app.route("/api/bots", methods=["GET"])
 def api_get_bots():
+    # retorna dados completos já sincronizados com a dashboard
     return jsonify({
         "bots": [b.to_dict() for b in Bot.query.order_by(Bot.id).all()],
-        "logs": monitor_logs, "last_action": metrics.get("last_check_ts")
+        "logs": monitor_logs,
+        "metrics": metrics,
+        "last_action": metrics.get("last_check_ts"),
+        "last_action_human": datetime.utcfromtimestamp(metrics["last_check_ts"]).strftime("%Y-%m-%d %H:%M:%S") if metrics["last_check_ts"] else None
     })
 
 @app.route("/api/bots", methods=["POST"])
@@ -279,9 +285,6 @@ def api_force_swap(bot_id):
 
 @app.route("/health")
 def health(): return jsonify({"status":"ok",**metrics})
-
-@app.route("/metrics")
-def metrics_endpoint(): return jsonify(metrics)
 
 # ---------- Bootstrap ----------
 PATCH_SQL = """

@@ -15,39 +15,43 @@
       --ok:#22c55e;
       --warn:#ffb020;
       --danger:#ff4d6d;
+      --toast-bg:#2a1a3a;
       font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
     }
     body { background:var(--bg); color:#fff; margin:0; padding:20px; }
-    .container { max-width:1200px; margin:0 auto; }
+    .container { max-width:1280px; margin:0 auto; }
     header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
-    h1 { font-weight:800; color:var(--accent); margin:0; font-size:28px; }
+    h1 { font-weight:800; color:var(--accent); margin:0; font-size:30px; letter-spacing:-0.5px; }
     .top-actions { display:flex; gap:12px; }
     button {
-      border:0; padding:8px 14px; border-radius:8px; cursor:pointer;
-      transition:all .2s; font-weight:600;
+      border:0; padding:9px 16px; border-radius:8px; cursor:pointer;
+      transition:all .2s; font-weight:600; font-size:14px;
     }
     button.primary {
       background:linear-gradient(90deg,var(--accent),var(--accent-2));
-      color:#fff;
+      color:#fff; box-shadow:0 3px 12px rgba(123,44,255,0.3);
     }
-    button.primary:hover { transform:scale(1.05); }
+    button.primary:hover { transform:scale(1.06); }
     button.ghost {
       background:transparent; border:1px solid rgba(255,255,255,0.08); color:var(--muted);
     }
     button.ghost:hover { border-color:var(--accent-2); color:#fff; }
-    .stats { display:flex; gap:14px; margin-bottom:16px; flex-wrap:wrap; }
-    .stat { background:var(--card); padding:14px; border-radius:12px; flex:1; min-width:160px; }
+    .stats { display:flex; gap:14px; margin-bottom:20px; flex-wrap:wrap; }
+    .stat {
+      background:var(--card); padding:18px; border-radius:12px; flex:1; min-width:180px;
+      display:flex; flex-direction:column; align-items:flex-start; position:relative;
+    }
     .stat .label { font-size:13px; color:var(--muted); }
-    .stat .value { font-size:22px; font-weight:700; margin-top:4px; }
-    .panel { background:var(--panel); padding:18px; border-radius:12px; }
+    .stat .value { font-size:24px; font-weight:700; margin-top:6px; }
+    .panel { background:var(--panel); padding:20px; border-radius:14px; box-shadow:0 4px 20px rgba(0,0,0,0.4); }
     table { width:100%; border-collapse:collapse; margin-top:12px; color:#fff; font-size:14px; }
-    th,td { padding:10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.05); }
+    th,td { padding:12px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.05); }
     th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0.5px; }
-    .pill { padding:5px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+    .pill { padding:6px 12px; border-radius:999px; font-size:12px; font-weight:600; }
     .activo { background:rgba(34,197,94,0.12); color:var(--ok); border:1px solid rgba(34,197,94,0.18); }
     .reserva { background:rgba(155,85,255,0.12); color:var(--accent-2); border:1px solid rgba(155,85,255,0.18); }
     .danger { color:var(--danger); }
-    .logs { margin-top:16px; background:#12081d; padding:12px; border-radius:10px; max-height:260px; overflow-y:auto; font-size:13px; color:#cfcfe5; line-height:1.5; }
+    .logs { margin-top:18px; background:#12081d; padding:14px; border-radius:10px; max-height:280px; overflow-y:auto; font-size:13px; color:#cfcfe5; line-height:1.5; }
     .logs div.warn { color:var(--warn); }
     .logs div.ok { color:var(--ok); }
     .logs div.error { color:var(--danger); }
@@ -61,10 +65,20 @@
       align-items:center; justify-content:center; z-index:1000;
     }
     .modal-content {
-      background:var(--panel); padding:20px; border-radius:12px; width:420px; box-shadow:0 6px 30px rgba(0,0,0,.5);
+      background:var(--panel); padding:22px; border-radius:14px; width:420px; box-shadow:0 6px 30px rgba(0,0,0,.6);
+      animation:fadeIn .25s ease;
     }
-    .modal h3 { margin:0 0 12px; font-size:18px; font-weight:700; }
-    .modal .actions { display:flex; justify-content:flex-end; gap:10px; margin-top:14px; }
+    .modal h3 { margin:0 0 14px; font-size:18px; font-weight:700; }
+    .modal .actions { display:flex; justify-content:flex-end; gap:10px; margin-top:16px; }
+    @keyframes fadeIn { from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
+
+    /* Toasts */
+    .toast {
+      position:fixed; bottom:20px; right:20px; background:var(--toast-bg);
+      color:#fff; padding:12px 18px; border-radius:8px; margin-top:10px; opacity:0; transform:translateY(20px);
+      transition:all .3s; z-index:2000; box-shadow:0 2px 12px rgba(0,0,0,0.5);
+    }
+    .toast.show { opacity:1; transform:translateY(0); }
   </style>
 </head>
 <body>
@@ -97,7 +111,7 @@
     <div class="modal" id="modal">
       <div class="modal-content">
         <h3 id="modal-title">Adicionar Bot</h3>
-        <div style="display:flex;flex-direction:column; gap:10px;">
+        <div style="display:flex;flex-direction:column; gap:12px;">
           <input id="f-name" type="text" placeholder="Nome do Bot">
           <input id="f-token" type="text" placeholder="Token do Bot (opcional)">
           <input id="f-redirect" type="url" placeholder="Redirect URL (https://...)">
@@ -112,21 +126,31 @@
         </div>
       </div>
     </div>
+
+    <!-- Toast container -->
+    <div id="toasts"></div>
   </div>
 
 <script>
   function qs(sel){return document.querySelector(sel)}
+  function showToast(msg){
+    const el=document.createElement("div");
+    el.className="toast"; el.innerText=msg;
+    document.getElementById("toasts").appendChild(el);
+    setTimeout(()=>el.classList.add("show"),50);
+    setTimeout(()=>{el.classList.remove("show"); setTimeout(()=>el.remove(),300)},4000);
+  }
 
   async function refreshData(){
     const res = await fetch("/api/bots");
     const data = await res.json();
     renderTable(data.bots);
     renderLogs(data.logs||[]);
-    if(data.last_action) qs("#last-action").innerText = data.last_action;
+    if(data.last_action) qs("#last-action").innerText=new Date(data.last_action*1000).toLocaleString();
   }
 
   function renderTable(bots){
-    const tbody = qs("#bots-tbody"); tbody.innerHTML="";
+    const tbody=qs("#bots-tbody"); tbody.innerHTML="";
     let ativos=0,reserva=0;
     bots.forEach(b=>{
       if(b.status==="ativo") ativos++; else reserva++;
@@ -179,13 +203,24 @@
 
   async function saveBot(){
     const body={name:qs("#f-name").value.trim(),token:qs("#f-token").value.trim(),redirect_url:qs("#f-redirect").value.trim(),status:qs("#f-status").value};
-    if(!body.name||!body.redirect_url) return alert("Nome e Redirect são obrigatórios");
-    if(editingId){await fetch(`/api/bots/${editingId}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});}
-    else{await fetch("/api/bots",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});}
-    closeModal();refreshData();
+    if(!body.name||!body.redirect_url) return showToast("⚠️ Nome e Redirect são obrigatórios");
+    const method=editingId?"PUT":"POST";
+    const url=editingId?`/api/bots/${editingId}`:"/api/bots";
+    const res=await fetch(url,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(res.ok){ showToast("✅ Bot salvo com sucesso"); closeModal(); refreshData(); }
+    else { const err=await res.json(); showToast("❌ Erro: "+(err.error||"falha")); }
   }
-  async function deleteBot(id){if(!confirm("Excluir este bot?")) return;await fetch(`/api/bots/${id}`,{method:"DELETE"});refreshData();}
-  async function forceSwap(id){if(!confirm("Forçar troca deste bot?")) return;await fetch(`/api/bots/${id}/force_swap`,{method:"POST"});refreshData();}
+  async function deleteBot(id){
+    if(!confirm("Excluir este bot?")) return;
+    const res=await fetch(`/api/bots/${id}`,{method:"DELETE"});
+    if(res.ok){ showToast("✅ Bot excluído"); refreshData(); }
+    else showToast("❌ Erro ao excluir");
+  }
+  async function forceSwap(id){
+    if(!confirm("Forçar troca deste bot?")) return;
+    await fetch(`/api/bots/${id}/force_swap`,{method:"POST"});
+    showToast("🔁 Swap forçado"); refreshData();
+  }
 
   // binds
   qs("#btn-open-add").addEventListener("click",openAdd);
