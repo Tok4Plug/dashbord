@@ -13,7 +13,6 @@ from flask import Flask, render_template, request, jsonify
 from flask_migrate import Migrate
 from sqlalchemy import text
 
-# imports locais
 from models import db, Bot
 
 # ---------- Logger ----------
@@ -41,12 +40,10 @@ MAX_LOGS         = int(os.getenv("MAX_LOGS", "300"))
 MAX_WORKERS      = int(os.getenv("MONITOR_MAX_WORKERS", "8"))
 START_MONITOR    = os.getenv("START_MONITOR", "1")
 
-# Alertas
 ALERT_ON_FIRST_FAIL   = os.getenv("ALERT_ON_FIRST_FAIL", "1") == "1"
 ALERT_COOLDOWN_MIN    = int(os.getenv("ALERT_COOLDOWN_MINUTES", "30"))
 ALERT_SUMMARY_ON_SWAP = os.getenv("ALERT_SUMMARY_ON_SWAP", "1") == "1"
 
-# Evita subir monitor durante migrations
 if os.getenv("FLASK_RUN_FROM_CLI") == "true" or "flask" in (sys.argv[0] if sys.argv else "").lower():
     START_MONITOR = "0"
 
@@ -70,8 +67,10 @@ metrics = {
 # ---------- Sessão requests ----------
 def make_requests_session():
     session = requests.Session()
-    retry = Retry(total=2, backoff_factor=0.5, status_forcelist=(500,502,503,504),
-                  allowed_methods=False, raise_on_status=False)
+    retry = Retry(total=2, backoff_factor=0.5,
+                  status_forcelist=(500,502,503,504),
+                  allowed_methods=False,
+                  raise_on_status=False)
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
@@ -95,7 +94,9 @@ def send_whatsapp_message_text(to_number: Optional[str], text_msg: str) -> bool:
             from twilio.rest import Client
             client = Client(TWILIO_SID, TWILIO_AUTH)
             for r in recipients:
-                client.messages.create(body=text_msg, from_=f"whatsapp:{TWILIO_FROM}", to=f"whatsapp:{r}")
+                client.messages.create(body=text_msg,
+                                       from_=f"whatsapp:{TWILIO_FROM}",
+                                       to=f"whatsapp:{r}")
             add_log("Mensagem WhatsApp enviada via Twilio.")
             return True
         except Exception as e:
@@ -105,7 +106,9 @@ def send_whatsapp_message_text(to_number: Optional[str], text_msg: str) -> bool:
         try:
             for r in recipients:
                 url = (f"https://api.callmebot.com/whatsapp.php?"
-                       f"phone={urllib.parse.quote_plus(r)}&text={urllib.parse.quote_plus(text_msg)}&apikey={CALLMEBOT_KEY}")
+                       f"phone={urllib.parse.quote_plus(r)}"
+                       f"&text={urllib.parse.quote_plus(text_msg)}"
+                       f"&apikey={CALLMEBOT_KEY}")
                 requests_session.get(url, timeout=10)
             add_log("Mensagem WhatsApp enviada via CallMeBot.")
             return True
@@ -114,7 +117,7 @@ def send_whatsapp_message_text(to_number: Optional[str], text_msg: str) -> bool:
 
     return False
 
-# ---------- Alertas com cooldown ----------
+# ---------- Alertas ----------
 alerts_lock = threading.Lock()
 down_alert_last_at = defaultdict(lambda: None)
 
@@ -144,28 +147,28 @@ def notify_bot_down(bot: Bot, failures: int, reason: str):
     send_whatsapp_message_text(None, msg)
 
 def notify_swap_summary(failed: Bot, replacement: Bot):
-    actives = db.session.query(Bot).filter_by(status="ativo").all()
-    reserves = db.session.query(Bot).filter_by(status="reserva").all()
+    actives = db.session.query(Bot).filter_by(status="ativo").count()
+    reserves = db.session.query(Bot).filter_by(status="reserva").count()
     msg = (
         "🔁 Substituição executada\n"
         f"❌ Caiu: {failed.name}\n"
         f"✅ Entrou: {replacement.name}\n\n"
-        f"📊 Ativos: {len(actives)} | Reserva: {len(reserves)}"
+        f"📊 Ativos: {actives} | Reserva: {reserves}"
     )
     if ALERT_SUMMARY_ON_SWAP:
         send_whatsapp_message_text(None, msg)
 
-# ---------- Health check ----------
+# ---------- Health checks ----------
 def safe_check_token(token: str) -> Tuple[bool, str]:
     if not token:
         return False, "sem token"
     try:
-        r = requests_session.get(f"https://api.telegram.org/bot{token}/getMe", timeout=CHECK_TIMEOUT)
+        r = requests_session.get(f"https://api.telegram.org/bot{token}/getMe",
+                                 timeout=CHECK_TIMEOUT)
         if r.status_code == 200:
             if r.json().get("ok", False):
                 return True, "token OK"
-            else:
-                return False, "token FAIL (possível restrição/ban)"
+            return False, "token FAIL (restrito/banido)"
         return False, f"token HTTP {r.status_code}"
     except Exception as e:
         return False, f"token erro {e.__class__.__name__}"
