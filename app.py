@@ -33,19 +33,17 @@ db.init_app(app)
 migrate = Migrate(app, db)
 
 # ---------- Parâmetros ----------
-MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL", "60"))   # intervalo do loop
-FAIL_THRESHOLD   = int(os.getenv("FAIL_THRESHOLD", "3"))      # nº de falhas antes de trocar
-CHECK_TIMEOUT    = float(os.getenv("CHECK_TIMEOUT", "7.0"))   # timeout da requisição
-MAX_LOGS         = int(os.getenv("MAX_LOGS", "300"))          # nº máx de logs armazenados
-MAX_WORKERS      = int(os.getenv("MONITOR_MAX_WORKERS", "8")) # threads em paralelo
-START_MONITOR    = os.getenv("START_MONITOR", "1")            # inicia monitor automático
+MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL", "60"))
+FAIL_THRESHOLD   = int(os.getenv("FAIL_THRESHOLD", "3"))
+CHECK_TIMEOUT    = float(os.getenv("CHECK_TIMEOUT", "7.0"))
+MAX_LOGS         = int(os.getenv("MAX_LOGS", "300"))
+MAX_WORKERS      = int(os.getenv("MONITOR_MAX_WORKERS", "8"))
+START_MONITOR    = os.getenv("START_MONITOR", "1")
 
-# ---------- Alertas ----------
 ALERT_ON_FIRST_FAIL   = os.getenv("ALERT_ON_FIRST_FAIL", "1") == "1"
 ALERT_COOLDOWN_MIN    = int(os.getenv("ALERT_COOLDOWN_MINUTES", "30"))
 ALERT_SUMMARY_ON_SWAP = os.getenv("ALERT_SUMMARY_ON_SWAP", "1") == "1"
 
-# Evitar rodar monitor em migrations
 if os.getenv("FLASK_RUN_FROM_CLI") == "true" or "flask" in (sys.argv[0] if sys.argv else "").lower():
     START_MONITOR = "0"
 
@@ -167,11 +165,10 @@ def safe_check_token(token: str) -> Tuple[bool, str]:
     try:
         r = requests_session.get(f"https://api.telegram.org/bot{token}/getMe",
                                  timeout=CHECK_TIMEOUT)
-        if r.status_code == 200:
-            if r.json().get("ok", False):
-                return True, "token OK"
-            return False, "token FAIL (restrito/banido)"
-        return False, f"token HTTP {r.status_code}"
+        data = r.json()
+        if r.status_code == 200 and data.get("ok") is True:
+            return True, "token OK"
+        return False, f"token FAIL ({data.get('description','inválido')})"
     except Exception as e:
         return False, f"token erro {e.__class__.__name__}"
 
@@ -179,14 +176,10 @@ def safe_check_link(url: str) -> Tuple[bool, str]:
     if not url:
         return False, "sem URL"
     try:
-        r = requests_session.head(url, timeout=CHECK_TIMEOUT, allow_redirects=True)
-        if 200 <= r.status_code < 400:
+        r = requests_session.get(url, timeout=CHECK_TIMEOUT, allow_redirects=True)
+        if 200 <= r.status_code < 400 and r.text.strip():
             return True, "url OK"
-    except Exception as e:
-        return False, f"url erro {e.__class__.__name__}"
-    try:
-        r2 = requests_session.get(url, timeout=CHECK_TIMEOUT, allow_redirects=True)
-        return (200 <= r2.status_code < 400), f"url GET {r2.status_code}"
+        return False, f"url HTTP {r.status_code}"
     except Exception as e:
         return False, f"url erro {e.__class__.__name__}"
 
@@ -231,13 +224,13 @@ def check_and_maybe_swap(bot_id: int):
 
         with db.session.begin():
             bot = db.session.get(Bot, bot_id)
+            bot.last_reason = reason
             if ok:
-                bot.failures, bot.last_ok, bot.updated_at, bot.last_reason = 0, datetime.utcnow(), datetime.utcnow(), "OK"
+                bot.failures, bot.last_ok, bot.updated_at = 0, datetime.utcnow(), datetime.utcnow()
                 _clear_alert_state(bot.id)
             else:
                 bot.failures = (bot.failures or 0) + 1
                 bot.updated_at = datetime.utcnow()
-                bot.last_reason = reason
                 metrics["failures_total"] += 1
                 if bot.failures == 1 and _should_alert_now(bot.id):
                     notify_bot_down(b, bot.failures, reason)
