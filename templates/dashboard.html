@@ -6,41 +6,22 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
     :root {
-      --bg:#0b0312;
-      --panel:#181028;
-      --accent:#7b2cff;
-      --accent-2:#9b55ff;
-      --muted:#9aa0a6;
-      --card:#221533;
-      --ok:#22c55e;
-      --warn:#ffb020;
-      --danger:#ff4d6d;
-      --toast-bg:#2a1a3a;
-      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      --bg:#0b0312; --panel:#181028; --accent:#7b2cff; --accent-2:#9b55ff;
+      --muted:#9aa0a6; --card:#221533; --ok:#22c55e; --warn:#ffb020; --danger:#ff4d6d;
+      --toast-bg:#2a1a3a; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
     }
     body { background:var(--bg); color:#fff; margin:0; padding:20px; }
     .container { max-width:1280px; margin:0 auto; }
     header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
     h1 { font-weight:800; color:var(--accent); margin:0; font-size:30px; letter-spacing:-0.5px; }
     .top-actions { display:flex; gap:12px; }
-    button {
-      border:0; padding:9px 16px; border-radius:8px; cursor:pointer;
-      transition:all .2s; font-weight:600; font-size:14px;
-    }
-    button.primary {
-      background:linear-gradient(90deg,var(--accent),var(--accent-2));
-      color:#fff; box-shadow:0 3px 12px rgba(123,44,255,0.3);
-    }
+    button { border:0; padding:9px 16px; border-radius:8px; cursor:pointer; transition:all .2s; font-weight:600; font-size:14px; }
+    button.primary { background:linear-gradient(90deg,var(--accent),var(--accent-2)); color:#fff; box-shadow:0 3px 12px rgba(123,44,255,0.3); }
     button.primary:hover { transform:scale(1.06); }
-    button.ghost {
-      background:transparent; border:1px solid rgba(255,255,255,0.08); color:var(--muted);
-    }
+    button.ghost { background:transparent; border:1px solid rgba(255,255,255,0.08); color:var(--muted); }
     button.ghost:hover { border-color:var(--accent-2); color:#fff; }
     .stats { display:flex; gap:14px; margin-bottom:20px; flex-wrap:wrap; }
-    .stat {
-      background:var(--card); padding:18px; border-radius:12px; flex:1; min-width:180px;
-      display:flex; flex-direction:column; align-items:flex-start; position:relative;
-    }
+    .stat { background:var(--card); padding:18px; border-radius:12px; flex:1; min-width:180px; display:flex; flex-direction:column; align-items:flex-start; }
     .stat .label { font-size:13px; color:var(--muted); }
     .stat .value { font-size:24px; font-weight:700; margin-top:6px; }
     .panel { background:var(--panel); padding:20px; border-radius:14px; box-shadow:0 4px 20px rgba(0,0,0,0.4); }
@@ -50,34 +31,21 @@
     .pill { padding:6px 12px; border-radius:999px; font-size:12px; font-weight:600; }
     .activo { background:rgba(34,197,94,0.12); color:var(--ok); border:1px solid rgba(34,197,94,0.18); }
     .reserva { background:rgba(155,85,255,0.12); color:var(--accent-2); border:1px solid rgba(155,85,255,0.18); }
-    .danger { color:var(--danger); }
+    .ok { color:var(--ok); font-weight:600; }
+    .fail { color:var(--danger); font-weight:600; }
     .logs { margin-top:18px; background:#12081d; padding:14px; border-radius:10px; max-height:280px; overflow-y:auto; font-size:13px; color:#cfcfe5; line-height:1.5; }
     .logs div.warn { color:var(--warn); }
     .logs div.ok { color:var(--ok); }
     .logs div.error { color:var(--danger); }
-    input,select {
-      background:var(--card); border:1px solid rgba(255,255,255,0.15); color:#fff;
-      padding:10px; border-radius:6px; width:100%; font-size:14px;
-    }
+    input,select { background:var(--card); border:1px solid rgba(255,255,255,0.15); color:#fff; padding:10px; border-radius:6px; width:100%; font-size:14px; }
     select { cursor:pointer; }
-    .modal {
-      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7);
-      align-items:center; justify-content:center; z-index:1000;
-    }
-    .modal-content {
-      background:var(--panel); padding:22px; border-radius:14px; width:420px; box-shadow:0 6px 30px rgba(0,0,0,.6);
-      animation:fadeIn .25s ease;
-    }
+    .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); align-items:center; justify-content:center; z-index:1000; }
+    .modal-content { background:var(--panel); padding:22px; border-radius:14px; width:420px; box-shadow:0 6px 30px rgba(0,0,0,.6); }
     .modal h3 { margin:0 0 14px; font-size:18px; font-weight:700; }
     .modal .actions { display:flex; justify-content:flex-end; gap:10px; margin-top:16px; }
-    @keyframes fadeIn { from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
 
     /* Toasts */
-    .toast {
-      position:fixed; bottom:20px; right:20px; background:var(--toast-bg);
-      color:#fff; padding:12px 18px; border-radius:8px; margin-top:10px; opacity:0; transform:translateY(20px);
-      transition:all .3s; z-index:2000; box-shadow:0 2px 12px rgba(0,0,0,0.5);
-    }
+    .toast { position:fixed; bottom:20px; right:20px; background:var(--toast-bg); color:#fff; padding:12px 18px; border-radius:8px; margin-top:10px; opacity:0; transform:translateY(20px); transition:all .3s; z-index:2000; box-shadow:0 2px 12px rgba(0,0,0,0.5); }
     .toast.show { opacity:1; transform:translateY(0); }
   </style>
 </head>
@@ -95,12 +63,17 @@
       <div class="stat"><div class="label">Ativos</div><div id="count-ativos" class="value">0</div></div>
       <div class="stat"><div class="label">Reserva</div><div id="count-reserva" class="value">0</div></div>
       <div class="stat"><div class="label">Última ação</div><div id="last-action" class="value">—</div></div>
+      <div class="stat"><div class="label">Checagens</div><div id="checks-total" class="value">0</div></div>
+      <div class="stat"><div class="label">Falhas</div><div id="failures-total" class="value">0</div></div>
     </div>
 
     <div class="panel">
       <table>
         <thead>
-          <tr><th>ID</th><th>Nome</th><th>Token</th><th>Redirect</th><th>Status</th><th>Falhas</th><th>Ações</th></tr>
+          <tr>
+            <th>ID</th><th>Nome</th><th>Status</th><th>Saúde Detectada</th>
+            <th>Falhas</th><th>Último OK</th><th>Redirect</th><th>Ações</th>
+          </tr>
         </thead>
         <tbody id="bots-tbody"></tbody>
       </table>
@@ -147,6 +120,8 @@
     renderTable(data.bots);
     renderLogs(data.logs||[]);
     if(data.last_action) qs("#last-action").innerText=new Date(data.last_action*1000).toLocaleString();
+    qs("#checks-total").innerText=data.metrics.checks_total||0;
+    qs("#failures-total").innerText=data.metrics.failures_total||0;
   }
 
   function renderTable(bots){
@@ -154,15 +129,16 @@
     let ativos=0,reserva=0;
     bots.forEach(b=>{
       if(b.status==="ativo") ativos++; else reserva++;
-      const statusClass = b.status==="ativo" ? "activo":"reserva";
       const tr=document.createElement("tr");
+      const health = b.failures>0 ? `<span class="fail">❌ Falha</span>` : `<span class="ok">✅ OK</span>`;
       tr.innerHTML=`
         <td>${b.id}</td>
         <td>${escapeHtml(b.name)}</td>
-        <td>${escapeHtml(b.token||"")}</td>
+        <td><span class="pill ${b.status==="ativo"?"activo":"reserva"}">${b.status}</span></td>
+        <td>${health}</td>
+        <td class="${b.failures>0?'fail':''}">${b.failures||0}</td>
+        <td>${b.last_ok ? new Date(b.last_ok).toLocaleString() : "—"}</td>
         <td><a href="${escapeAttr(b.redirect_url)}" target="_blank">${escapeHtml(b.redirect_url)}</a></td>
-        <td><span class="pill ${statusClass}">${b.status}</span></td>
-        <td class="${b.failures>0?'danger':''}">${b.failures||0}</td>
         <td>
           <button class="ghost" onclick="openEdit(${b.id})">✏️</button>
           <button class="ghost" onclick="forceSwap(${b.id})">🔁</button>
@@ -186,7 +162,7 @@
   function escapeHtml(s){return s? s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])):""}
   function escapeAttr(s){return s? s.replace(/"/g,"&quot;"):""}
 
-  // --- Modal ---
+  // Modal
   let editingId=null;
   function openAdd(){editingId=null;resetForm();qs("#modal-title").innerText="Adicionar Bot";qs("#modal").style.display="flex";}
   function openEdit(id){
@@ -222,11 +198,9 @@
     showToast("🔁 Swap forçado"); refreshData();
   }
 
-  // binds
   qs("#btn-open-add").addEventListener("click",openAdd);
   qs("#btn-refresh").addEventListener("click",refreshData);
 
-  // inicial
   refreshData(); setInterval(refreshData,15000);
 </script>
 </body>
