@@ -2,7 +2,15 @@ import os
 import time
 import requests
 
+# ============================
+# Configurações globais
+# ============================
+MONITOR_CHAT_ID = os.getenv("MONITOR_CHAT_ID")  # ID do grupo de monitoramento (pode ser negativo)
+TELEGRAM_API = "https://api.telegram.org"
 
+# ============================
+# Log unificado
+# ============================
 def log_event(message: str, level: str = "INFO"):
     """
     Log unificado para console (futuro: pode integrar Prometheus ou outro observability stack).
@@ -10,45 +18,52 @@ def log_event(message: str, level: str = "INFO"):
     print(f"[{level}] {time.strftime('%Y-%m-%d %H:%M:%S')} | {message}")
 
 
-def check_link(url: str, retries: int = 3, backoff: int = 2) -> bool:
+# ============================
+# Checagem de Link Redirect
+# ============================
+def check_link(url: str, retries: int = 3, backoff: int = 2):
     """
     Verifica se o link de redirect está online.
-    - Tenta várias vezes (retries) com backoff exponencial.
-    - Retorna True se resposta 200, False caso contrário.
+    Retorna (ok: bool, motivo: str)
     """
+    if not url:
+        return False, "URL vazia"
+
     for attempt in range(1, retries + 1):
         try:
             log_event(f"Checando link ({attempt}/{retries}): {url}")
             r = requests.get(url, timeout=10)
 
             if r.status_code == 200:
-                log_event(f"✅ Link OK: {url}")
-                return True
+                return True, "Link OK"
             else:
                 log_event(f"⚠️ Link respondeu {r.status_code}: {url}", level="WARNING")
+                reason = f"HTTP {r.status_code}"
 
         except requests.Timeout:
-            log_event(f"⏳ Timeout na tentativa {attempt} para {url}", level="WARNING")
+            reason = f"Timeout na tentativa {attempt}"
+            log_event(reason, level="WARNING")
         except Exception as e:
+            reason = f"Erro {e}"
             log_event(f"❌ Erro ao checar {url}: {e}", level="ERROR")
 
         time.sleep(backoff * attempt)  # backoff exponencial
 
-    log_event(f"❌ Link OFFLINE após {retries} tentativas: {url}", level="ERROR")
-    return False
+    return False, f"Link OFFLINE ({reason})"
 
 
-def check_token(token: str, retries: int = 2) -> bool:
+# ============================
+# Checagem de Token
+# ============================
+def check_token(token: str, retries: int = 2):
     """
     Verifica se o token do bot Telegram é válido.
-    - Usa endpoint oficial Telegram getMe.
-    - Faz retries em caso de erro de rede.
+    Retorna (ok: bool, motivo: str, username: str|None)
     """
     if not token:
-        log_event("⚠️ Token vazio recebido para validação", level="WARNING")
-        return False
+        return False, "Token vazio", None
 
-    url = f"https://api.telegram.org/bot{token}/getMe"
+    url = f"{TELEGRAM_API}/bot{token}/getMe"
 
     for attempt in range(1, retries + 1):
         try:
@@ -58,20 +73,51 @@ def check_token(token: str, retries: int = 2) -> bool:
             if r.status_code == 200:
                 data = r.json()
                 if data.get("ok") and "id" in data.get("result", {}):
-                    log_event(f"✅ Token válido. Bot: @{data['result'].get('username', 'desconhecido')}")
-                    return True
+                    username = data["result"].get("username", "desconhecido")
+                    return True, f"Token válido (@{username})", username
                 else:
-                    log_event("⚠️ Token inválido ou resposta inesperada do Telegram", level="WARNING")
-                    return False
+                    return False, "Resposta inesperada do Telegram", None
             else:
-                log_event(f"⚠️ Telegram respondeu {r.status_code} ao validar token", level="WARNING")
+                reason = f"HTTP {r.status_code}"
+                log_event(f"⚠️ Telegram respondeu {reason} ao validar token", level="WARNING")
 
         except requests.Timeout:
-            log_event(f"⏳ Timeout na validação do token (tentativa {attempt})", level="WARNING")
+            reason = f"Timeout na validação do token (tentativa {attempt})"
+            log_event(reason, level="WARNING")
         except Exception as e:
-            log_event(f"❌ Erro na validação do token: {e}", level="ERROR")
+            reason = f"Erro na validação do token: {e}"
+            log_event(reason, level="ERROR")
 
         time.sleep(1.5 * attempt)
 
-    log_event("❌ Token inválido após múltiplas tentativas", level="ERROR")
-    return False
+    return False, "Token inválido após múltiplas tentativas", None
+
+
+# ============================
+# Probe ativo (mensagem de teste)
+# ============================
+def check_probe(token: str, chat_id: str = None):
+    """
+    Envia uma mensagem de teste para o grupo de monitoramento.
+    Retorna (ok: bool, motivo: str)
+    """
+    if not token:
+        return False, "Token vazio"
+    if not chat_id:
+        return None, "Probe desabilitado (MONITOR_CHAT_ID não definido)"
+
+    url = f"{TELEGRAM_API}/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": "🔍 Probe automático: teste de vida"
+    }
+
+    try:
+        r = requests.post(url, json=payload, timeout=8)
+        if r.status_code == 200 and r.json().get("ok"):
+            return True, "Probe OK"
+        return False, f"Falha no probe ({r.status_code})"
+    except requests.Timeout:
+        return False, "Timeout no probe"
+    except Exception as e:
+        return False, f"Erro probe: {e}"
