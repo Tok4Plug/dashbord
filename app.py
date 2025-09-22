@@ -1,5 +1,5 @@
 # ================================
-# app.py (Monitor Avançado + Sincronia Dashboard + Alerts + Verificação Confiável)
+# app.py (Monitor Avançado + Sincronia Dashboard + Alerts + Verificação Confiável + WebhookInfo Logs)
 # ================================
 import os
 import time
@@ -16,7 +16,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text
 from twilio.rest import Client
 
-from utils import check_link, check_token, check_probe, log_event
+# Agora importamos também o check_webhook
+from utils import check_link, check_token, check_probe, check_webhook, log_event
 from models import db, Bot
 
 # ================================
@@ -139,15 +140,23 @@ def _run_checks_once(bot):
     token_ok, token_reason, username = check_token(bot.token or "")
     url_ok, url_reason = check_link(bot.redirect_url or "")
     probe_ok, probe_reason = check_probe(bot.token, MONITOR_CHAT_ID)
+    webhook_ok, webhook_reason, webhook_info = check_webhook(bot.token or "")
 
     decision_ok = bool(token_ok and (probe_ok is True or probe_ok is None))
     diag = {
         "token_ok": token_ok,
         "url_ok": url_ok,
         "probe_ok": probe_ok if probe_ok in (True, False) else None,
+        "webhook_ok": webhook_ok,
         "decision_ok": decision_ok,
-        "reasons": {"token": token_reason, "url": url_reason, "probe": probe_reason},
-        "username": username
+        "reasons": {
+            "token": token_reason,
+            "url": url_reason,
+            "probe": probe_reason,
+            "webhook": webhook_reason
+        },
+        "username": username,
+        "webhook_info": webhook_info
     }
     return diag, decision_ok
 
@@ -216,6 +225,12 @@ def monitor_loop(interval: int = MONITOR_INTERVAL):
                 except Exception:
                     pass
 
+                # Log completo incluindo webhook
+                add_log(f"📋 Diagnóstico {bot.name}: "
+                        f"token_ok={diag['token_ok']}, url_ok={diag['url_ok']}, "
+                        f"probe_ok={diag['probe_ok']}, webhook_ok={diag['webhook_ok']} "
+                        f"| R: {diag['reasons']}")
+
                 if diag["decision_ok"]:
                     bot.reset_failures()
                     bot.last_ok = datetime.utcnow()
@@ -241,7 +256,8 @@ def monitor_loop(interval: int = MONITOR_INTERVAL):
                 if should_alert:
                     send_whatsapp("⚠️ Bot com problema",
                         f"Nome: {bot.name}\nURL: {bot.redirect_url}\nFalhas: {fail_cnt}/{FAIL_THRESHOLD}\n"
-                        f"🔑 Token: {diag['reasons'].get('token')}\n🌍 URL: {diag['reasons'].get('url')}\n📡 Probe: {diag['reasons'].get('probe')}"
+                        f"🔑 Token: {diag['reasons'].get('token')}\n🌍 URL: {diag['reasons'].get('url')}\n"
+                        f"📡 Probe: {diag['reasons'].get('probe')}\n🔗 Webhook: {diag['reasons'].get('webhook')}"
                     )
 
                 if in_grace:
@@ -293,56 +309,6 @@ def api_bots():
         return jsonify({"bots": payload, "logs": monitor_logs, "metrics": metrics})
     except Exception as e:
         add_log(f"❌ /api/bots erro: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/bots", methods=["POST"])
-def add_bot():
-    data = request.json or {}
-    if not data.get("name") or not data.get("url") or not data.get("token"):
-        return jsonify({"error": "Campos obrigatórios: name, url, token"}), 400
-    try:
-        bot = Bot(name=data["name"], redirect_url=data["url"], token=data["token"], status="reserva")
-        db.session.add(bot)
-        if not safe_commit():
-            return jsonify({"error": "Falha ao salvar bot"}), 500
-        add_log(f"✅ Novo bot adicionado: {bot.name}")
-        return jsonify(bot.to_dict(with_meta=True)), 201
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/bots/<int:bot_id>", methods=["PUT"])
-def update_bot(bot_id):
-    data = request.json or {}
-    try:
-        bot = Bot.query.get(bot_id)
-        if not bot:
-            return jsonify({"error": "Bot não encontrado"}), 404
-        if "name" in data: bot.name = data["name"]
-        if "url" in data: bot.redirect_url = data["url"]
-        if "token" in data: bot.token = data["token"]
-        safe_commit()
-        add_log(f"✏️ Bot atualizado: {bot.name}")
-        return jsonify(bot.to_dict(with_meta=True))
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/bots/<int:bot_id>", methods=["DELETE"])
-def delete_bot(bot_id):
-    try:
-        bot = Bot.query.get(bot_id)
-        if not bot:
-            return jsonify({"error": "Bot não encontrado"}), 404
-        db.session.delete(bot)
-        safe_commit()
-        with _state_lock:
-            diag_cache.pop(bot.id, None)
-            alert_state.pop(bot.id, None)
-        add_log(f"🗑 Bot removido: {bot.name}")
-        return jsonify({"message": "Bot deletado"})
-    except SQLAlchemyError as e:
-        db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
 # ================================
