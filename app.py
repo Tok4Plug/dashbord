@@ -131,7 +131,7 @@ def get_bots_from_db():
         return [], []
 
 # ================================
-# Verificação confiável (com WebhookInfo)
+# Verificação confiável (com WebhookInfo inteligente)
 # ================================
 def _run_checks_once(bot):
     token_ok, token_reason, username = check_token(bot.token or "")
@@ -139,7 +139,12 @@ def _run_checks_once(bot):
     probe_ok, probe_reason = check_probe(bot.token, MONITOR_CHAT_ID)
     webhook_ok, webhook_reason, webhook_info = check_webhook(bot.token or "")
 
-    decision_ok = bool(token_ok and webhook_ok and (probe_ok is True or probe_ok is None))
+    # Critério principal: token e probe
+    decision_ok = bool(token_ok and (probe_ok is True or probe_ok is None))
+
+    # Se webhook falhou mas bot responde, apenas alerta
+    if decision_ok and not webhook_ok:
+        add_log(f"⚠️ {bot.name}: webhook falhou ({webhook_reason}), mas bot responde normalmente.")
 
     diag = {
         "token_ok": token_ok,
@@ -147,7 +152,12 @@ def _run_checks_once(bot):
         "probe_ok": probe_ok if probe_ok in (True, False) else None,
         "webhook_ok": webhook_ok,
         "decision_ok": decision_ok,
-        "reasons": {"token": token_reason, "url": url_reason, "probe": probe_reason, "webhook": webhook_reason},
+        "reasons": {
+            "token": token_reason,
+            "url": url_reason,
+            "probe": probe_reason,
+            "webhook": webhook_reason
+        },
         "username": username,
         "webhook_info": webhook_info
     }

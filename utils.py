@@ -1,5 +1,5 @@
 # ================================
-# utils.py (versão avançada e robusta)
+# utils.py (versão avançada e robusta, sincronizado com app.py)
 # ================================
 import os
 import logging
@@ -63,7 +63,7 @@ def send_whatsapp(msg: str):
 
 
 def carregar_links_typebot():
-    """Busca links do flow no Typebot para debug/validação externa."""
+    """Busca links de redirect no fluxo do Typebot para debug/validação."""
     if not TYPEBOT_API or not TYPEBOT_FLOW_ID:
         logger.warning("⚠️ TYPEBOT_API ou TYPEBOT_FLOW_ID não configurados.")
         return []
@@ -95,16 +95,16 @@ def check_token(token: str):
         r = requests.get(url, timeout=8)
         if r.status_code == 200:
             data = r.json()
-            if data.get("ok"):
-                return True, "Token válido", data["result"]["username"]
-            return False, f"Token inválido: {data}", None
+            if data.get("ok") and "result" in data:
+                return True, "Token válido", data["result"].get("username")
+            return False, "Token inválido ou resposta inesperada", None
         return False, f"Erro HTTP {r.status_code}", None
     except Exception as e:
         return False, f"Exceção: {e}", None
 
 
 def check_link(url: str):
-    """Testa se a redirect_url do bot responde HTTP."""
+    """Verifica se a redirect_url responde HTTP válido (200–399)."""
     if not url:
         return False, "URL não definida"
     try:
@@ -117,7 +117,13 @@ def check_link(url: str):
 
 
 def check_probe(token: str, chat_id: str):
-    """Faz probe real enviando mensagem no grupo de monitoramento."""
+    """
+    Envia mensagem no grupo de monitoramento para validar entrega.
+    Retorna:
+        True  → mensagem entregue
+        False → erro explícito
+        None  → probe desativado (sem token/chat_id)
+    """
     if not token or not chat_id:
         return None, "Probe desativado (token/chat_id ausente)"
     try:
@@ -135,6 +141,9 @@ def check_webhook(token: str):
     """
     Verifica estado do webhook via /getWebhookInfo.
     Retorna (ok: bool, reason: str, details: dict).
+    - ok = True se webhook ativo e sem erros.
+    - ok = False se não configurado ou erro crítico.
+    - details traz todas as infos de debug.
     """
     if not token:
         return False, "Token vazio", {}
@@ -150,11 +159,9 @@ def check_webhook(token: str):
 
         if info.get("url"):
             if info.get("last_error_date"):
-                reason = f"Erro: {info.get('last_error_message')}"
-                return False, reason, info
+                return False, f"Erro: {info.get('last_error_message')}", info
             if info.get("pending_update_count", 0) > 0:
-                reason = f"{info.get('pending_update_count')} updates pendentes"
-                return False, reason, info
+                return False, f"{info.get('pending_update_count')} updates pendentes", info
             return True, "Webhook ativo e saudável", info
         else:
             return False, "Nenhum webhook configurado", info
@@ -167,16 +174,18 @@ def check_webhook(token: str):
 def diagnosticar_bot(bot: Bot) -> dict:
     """
     Executa todas as checagens: token, url, probe e webhook.
-    Atualiza diagnóstico no banco de dados.
-    Retorna dict com status detalhado.
+    Atualiza diagnóstico no banco.
+    Retorna dict com status detalhado para dashboard e monitor.
     """
     token_ok, token_reason, username = check_token(bot.token or "")
     url_ok, url_reason = check_link(bot.redirect_url or "")
     probe_ok, probe_reason = check_probe(bot.token, MONITOR_CHAT_ID)
     webhook_ok, webhook_reason, webhook_details = check_webhook(bot.token)
 
-    # Decisão final mais rigorosa:
-    decision_ok = token_ok and webhook_ok and (probe_ok is True or probe_ok is None)
+    # 🔎 Lógica de decisão inteligente:
+    # - Bot é considerado OK se token_ok e (probe_ok True/None).
+    # - webhook_ok não derruba bot, só gera alerta.
+    decision_ok = token_ok and (probe_ok is True or probe_ok is None)
 
     diag = {
         "token_ok": token_ok,
@@ -192,7 +201,7 @@ def diagnosticar_bot(bot: Bot) -> dict:
         "decision_ok": decision_ok
     }
 
-    # Sincroniza com o banco
+    # Persistência no banco
     try:
         bot.apply_diag({
             "token_ok": token_ok,
@@ -220,13 +229,13 @@ def diagnosticar_bot(bot: Bot) -> dict:
 # Log de eventos centralizado
 # ================================
 def log_event(bot: Bot, event: str, level: str = "info"):
-    """Centraliza logs e envia alerta via WhatsApp se necessário."""
+    """Centraliza logs e dispara alerta via WhatsApp se necessário."""
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{ts}] {bot.name if bot else 'SYSTEM'}: {event}"
     if level == "error":
         logger.error(line)
         send_whatsapp(f"❌ {event}")
-    elif level == "warn":
+    elif level in ("warn", "warning"):
         logger.warning(line)
         send_whatsapp(f"⚠️ {event}")
     else:

@@ -1,26 +1,30 @@
 # ================================
-# models.py (versão avançada, inteligente e sincronizada)
+# models.py (versão avançada, inteligente e sincronizada com utils.py e app.py)
 # ================================
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Index, UniqueConstraint, func
 
-# Inicializa o SQLAlchemy (injeção via app.py)
+# Inicializa o SQLAlchemy (injeção feita em app.py)
 db = SQLAlchemy()
 
 
 class Bot(db.Model):
     """
     Representa um Bot monitorado no sistema TOK4.
-    Cada registro contém informações de identificação,
-    status, monitoramento de saúde, métricas de falhas,
-    diagnósticos detalhados e timestamps de criação/atualização.
+    Cada registro contém:
+    - Identificação (id, nome, token, URL)
+    - Status (ativo, reserva, inativo)
+    - Histórico de falhas
+    - Diagnósticos detalhados de última checagem
+    - Informações de webhook
+    - Timestamps de criação/atualização
 
-    Essa classe foi projetada para:
-    - Alta performance em consultas.
-    - Sincronia direta com o monitor (app.py).
-    - Serialização compatível com o Dashboard.
-    - Métodos utilitários para manipulação de estado e diagnósticos.
+    Este modelo foi projetado para:
+    - Alta performance de consulta (com índices)
+    - Serialização compatível com dashboard
+    - Métodos utilitários de estado (ativo/reserva/inativo)
+    - Aplicação de diagnósticos de monitoramento
     """
     __tablename__ = "bots"
 
@@ -30,8 +34,8 @@ class Bot(db.Model):
     token = db.Column(db.String(255), nullable=True)
     redirect_url = db.Column(db.String(500), nullable=False, index=True)
 
-    # Status do bot: ativo | reserva | inativo
-    status = db.Column(db.String(20), default="reserva", index=True)
+    # ---------- Status ----------
+    status = db.Column(db.String(20), default="reserva", index=True)  # ativo | reserva | inativo
 
     # ---------- Monitoramento ----------
     failures = db.Column(db.Integer, default=0, index=True)
@@ -43,9 +47,11 @@ class Bot(db.Model):
     last_url_ok = db.Column(db.Boolean, nullable=True)
     last_webhook_ok = db.Column(db.Boolean, nullable=True)
 
+    # Códigos HTTP
     last_token_http = db.Column(db.Integer, nullable=True)
     last_url_http = db.Column(db.Integer, nullable=True)
 
+    # Webhook details
     last_webhook_url = db.Column(db.Text, nullable=True)
     last_webhook_error = db.Column(db.Text, nullable=True)
     last_webhook_error_at = db.Column(db.DateTime, nullable=True)
@@ -68,38 +74,38 @@ class Bot(db.Model):
     # Métodos de Estado
     # ====================================================
     def mark_active(self):
-        """Marca como ativo, reseta falhas e registra último sucesso."""
+        """Marca como ativo, reseta falhas e atualiza último sucesso."""
         self.status = "ativo"
         self.failures = 0
         self.last_ok = datetime.utcnow()
         self.touch()
 
     def mark_reserve(self):
-        """Coloca o bot em reserva e zera falhas."""
+        """Coloca em reserva e zera falhas."""
         self.status = "reserva"
         self.failures = 0
         self.touch()
 
     def mark_inactive(self, reason: str = None):
-        """Desativa o bot, armazenando razão opcional."""
+        """Marca como inativo e opcionalmente registra motivo."""
         self.status = "inativo"
         if reason:
             self.last_reason = reason
         self.touch()
 
     def increment_failure(self):
-        """Incrementa falhas consecutivas."""
+        """Incrementa contador de falhas consecutivas."""
         self.failures = (self.failures or 0) + 1
         self.touch()
 
     def reset_failures(self):
-        """Reseta falhas e define o último sucesso."""
+        """Reseta contador de falhas e atualiza último sucesso."""
         self.failures = 0
         self.last_ok = datetime.utcnow()
         self.touch()
 
     def touch(self):
-        """Atualiza campo updated_at."""
+        """Atualiza timestamp de atualização."""
         self.updated_at = datetime.utcnow()
 
     # ====================================================
@@ -107,19 +113,19 @@ class Bot(db.Model):
     # ====================================================
     def apply_diag(self, diag: dict):
         """
-        Aplica os resultados de diagnóstico ao bot.
-        Exemplo de dict esperado:
+        Aplica resultados de diagnóstico ao registro.
+        Exemplo esperado:
         {
             "token_ok": True,
             "url_ok": True,
-            "webhook_ok": None,
+            "webhook_ok": False,
             "last_token_http": 200,
             "last_url_http": 200,
-            "last_webhook_url": "...",
-            "last_webhook_error": None,
+            "last_webhook_url": "https://...",
+            "last_webhook_error": "Read timeout",
             "last_webhook_error_at": datetime.utcnow(),
             "pending_update_count": 0,
-            "reason": "Token válido, URL ok"
+            "reason": "Token válido | URL OK | Webhook erro timeout"
         }
         """
         self.last_token_ok = diag.get("token_ok")
@@ -142,9 +148,9 @@ class Bot(db.Model):
         """
         Avalia se o bot está saudável.
         Critérios:
-        - Token válido.
-        - URL válida.
-        - Webhook não crítico (True ou None).
+        - Token válido
+        - URL válida
+        - Webhook não crítico (True ou None)
         """
         return (
             (self.last_token_ok is True)
@@ -154,8 +160,8 @@ class Bot(db.Model):
 
     def failure_ratio(self) -> float:
         """
-        Calcula a taxa de falhas relativa ao tempo de vida do bot.
-        Pode ser usado para estatísticas comparativas no dashboard.
+        Calcula taxa de falhas relativa ao tempo de vida do bot.
+        Útil para relatórios e comparação no dashboard.
         """
         if not self.created_at:
             return float(self.failures or 0)
@@ -169,33 +175,27 @@ class Bot(db.Model):
     # ====================================================
     @classmethod
     def get_active(cls):
-        """Retorna todos os bots ativos."""
+        """Retorna lista de bots ativos."""
         return cls.query.filter_by(status="ativo").all()
 
     @classmethod
     def get_reserve(cls):
-        """Retorna todos os bots em reserva."""
+        """Retorna lista de bots em reserva."""
         return cls.query.filter_by(status="reserva").all()
 
     @classmethod
     def get_inactive(cls):
-        """Retorna todos os bots inativos."""
+        """Retorna lista de bots inativos."""
         return cls.query.filter_by(status="inativo").all()
 
     @classmethod
     def get_oldest_updated(cls):
-        """Retorna o bot mais antigo em termos de atualização."""
+        """Retorna o bot mais antigo (baseado no updated_at)."""
         return cls.query.order_by(cls.updated_at.asc()).first()
 
     @classmethod
     def stats(cls):
-        """
-        Retorna estatísticas globais dos bots.
-        Inclui:
-        - total de bots
-        - total de falhas acumuladas
-        - último update global
-        """
+        """Retorna estatísticas globais: total, falhas e último update."""
         return db.session.query(
             func.count(cls.id).label("total"),
             func.sum(cls.failures).label("total_failures"),
@@ -206,10 +206,7 @@ class Bot(db.Model):
     # Serialização
     # ====================================================
     def to_dict(self, with_meta: bool = True, include_diag: bool = True) -> dict:
-        """
-        Serializa o objeto Bot para dicionário,
-        compatível com o consumo via API do Dashboard.
-        """
+        """Serializa objeto Bot em dict compatível com API/Dashboard."""
         base = {
             "id": self.id,
             "name": self.name,
