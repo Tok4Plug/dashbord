@@ -85,7 +85,7 @@ def add_log(msg: str):
 
 
 def send_whatsapp(title: str, details: str):
-    """Envia mensagem formatada via WhatsApp (Twilio)"""
+    """Envia mensagem formatada via WhatsApp (Twilio)."""
     if not twilio_client:
         add_log("⚠️ Twilio não configurado.")
         return
@@ -105,7 +105,7 @@ def send_whatsapp(title: str, details: str):
 
 
 def get_bots_from_db():
-    """Carrega bots ativos e reservas"""
+    """Carrega bots ativos e reservas do banco de dados."""
     try:
         ativos = Bot.query.filter_by(status="ativo").all()
         reserva = Bot.query.filter_by(status="reserva").all()
@@ -116,7 +116,7 @@ def get_bots_from_db():
 
 
 def diagnosticar_bot(bot):
-    """Executa checagens do bot (Token, URL, Probe)"""
+    """Executa checagens do bot (Token, URL, Probe)."""
     diag = {}
     token_ok, token_reason, username = check_token(bot.token or "")
     url_ok, url_reason = check_link(bot.redirect_url or "")
@@ -137,86 +137,88 @@ def diagnosticar_bot(bot):
 # Loop de monitoramento
 # ================================
 def monitor_loop(interval: int = MONITOR_INTERVAL):
-    add_log("🔄 Carregando bots do banco...")
-    ativos, reserva = get_bots_from_db()
+    """Loop principal que monitora os bots ativos e gerencia swaps."""
+    with app.app_context():  # Garante contexto Flask para queries
+        add_log("🔄 Carregando bots do banco...")
+        ativos, reserva = get_bots_from_db()
 
-    # Se não houver ativos → ativa 2 da reserva
-    if not ativos and reserva:
-        for bot in reserva[:2]:
-            bot.mark_active()
-        try:
-            db.session.commit()
-            ativos, reserva = get_bots_from_db()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            add_log(f"❌ Erro ao ativar bots iniciais: {e}")
+        # Se não houver ativos → ativa 2 da reserva
+        if not ativos and reserva:
+            for bot in reserva[:2]:
+                bot.mark_active()
+            try:
+                db.session.commit()
+                ativos, reserva = get_bots_from_db()
+            except SQLAlchemyError as e:
+                db.session.rollback()
+                add_log(f"❌ Erro ao ativar bots iniciais: {e}")
 
-    add_log(f"✅ Monitor iniciado | Ativos: {len(ativos)} | Reserva: {len(reserva)}")
-    send_whatsapp("🚀 Monitor Iniciado", f"Ativos: {len(ativos)} | Reservas: {len(reserva)}")
+        add_log(f"✅ Monitor iniciado | Ativos: {len(ativos)} | Reserva: {len(reserva)}")
+        send_whatsapp("🚀 Monitor Iniciado", f"Ativos: {len(ativos)} | Reservas: {len(reserva)}")
 
-    while True:
-        for bot in list(ativos):
-            add_log(f"🔎 Checando {bot.name} → {bot.redirect_url}")
-            metrics["checks_total"] += 1
-            metrics["last_check_ts"] = int(time.time())
+        while True:
+            for bot in list(ativos):
+                add_log(f"🔎 Checando {bot.name} → {bot.redirect_url}")
+                metrics["checks_total"] += 1
+                metrics["last_check_ts"] = int(time.time())
 
-            diag = diagnosticar_bot(bot)
-            bot._diag = diag  # para expor no JSON
+                diag = diagnosticar_bot(bot)
+                bot._diag = diag  # exposto via API no dashboard
 
-            if diag["decision_ok"]:
-                bot.reset_failures()
-                bot.last_ok = datetime.utcnow()
-                try:
-                    db.session.commit()
-                except SQLAlchemyError as e:
-                    db.session.rollback()
-                    add_log(f"❌ Erro ao salvar status OK no banco: {e}")
-                continue
-
-            # Falha
-            bot.increment_failure()
-            metrics["failures_total"] += 1
-            add_log(f"⚠️ Falha em {bot.name} ({bot.failures}/{FAIL_THRESHOLD})")
-
-            send_whatsapp(
-                "⚠️ Bot com problema",
-                f"Nome: {bot.name}\n"
-                f"URL: {bot.redirect_url}\n"
-                f"Falhas: {bot.failures}\n\n"
-                f"🔑 Token: {diag['reasons']['token']}\n"
-                f"🌍 URL: {diag['reasons']['url']}\n"
-                f"📡 Probe: {diag['reasons']['probe']}"
-            )
-
-            # Substituição se passar do threshold
-            if bot.failures >= FAIL_THRESHOLD:
-                bot.mark_reserve()
-                try:
-                    db.session.commit()
-                except SQLAlchemyError:
-                    db.session.rollback()
-                if bot in ativos:
-                    ativos.remove(bot)
-
-                if reserva:
-                    novo = reserva.pop(0)
-                    novo.mark_active()
+                if diag["decision_ok"]:
+                    bot.reset_failures()
+                    bot.last_ok = datetime.utcnow()
                     try:
                         db.session.commit()
-                        ativos.append(novo)
-                        metrics["switches_total"] += 1
-                        send_whatsapp(
-                            "🔄 Substituição Automática",
-                            f"❌ {bot.name} caiu\n➡️ ✅ {novo.name} ativo\n"
-                            f"Novo URL: {novo.redirect_url}"
-                        )
                     except SQLAlchemyError as e:
                         db.session.rollback()
-                        add_log(f"❌ Erro ao ativar novo bot {novo.name}: {e}")
-                else:
-                    send_whatsapp("❌ Falha Crítica", "Não há mais bots na reserva!")
+                        add_log(f"❌ Erro ao salvar status OK no banco: {e}")
+                    continue
 
-        time.sleep(interval)
+                # Falha
+                bot.increment_failure()
+                metrics["failures_total"] += 1
+                add_log(f"⚠️ Falha em {bot.name} ({bot.failures}/{FAIL_THRESHOLD})")
+
+                send_whatsapp(
+                    "⚠️ Bot com problema",
+                    f"Nome: {bot.name}\n"
+                    f"URL: {bot.redirect_url}\n"
+                    f"Falhas: {bot.failures}\n\n"
+                    f"🔑 Token: {diag['reasons']['token']}\n"
+                    f"🌍 URL: {diag['reasons']['url']}\n"
+                    f"📡 Probe: {diag['reasons']['probe']}"
+                )
+
+                # Substituição automática
+                if bot.failures >= FAIL_THRESHOLD:
+                    bot.mark_reserve()
+                    try:
+                        db.session.commit()
+                    except SQLAlchemyError:
+                        db.session.rollback()
+                    if bot in ativos:
+                        ativos.remove(bot)
+
+                    if reserva:
+                        novo = reserva.pop(0)
+                        novo.mark_active()
+                        try:
+                            db.session.commit()
+                            ativos.append(novo)
+                            metrics["switches_total"] += 1
+                            send_whatsapp(
+                                "🔄 Substituição Automática",
+                                f"❌ {bot.name} caiu\n➡️ ✅ {novo.name} ativo\n"
+                                f"Novo URL: {novo.redirect_url}"
+                            )
+                        except SQLAlchemyError as e:
+                            db.session.rollback()
+                            add_log(f"❌ Erro ao ativar novo bot {novo.name}: {e}")
+                    else:
+                        send_whatsapp("❌ Falha Crítica", "Não há mais bots na reserva!")
+
+            time.sleep(interval)
 
 # ================================
 # Rotas para Dashboard
@@ -227,10 +229,11 @@ def index():
 
 @app.route("/api/bots", methods=["GET"])
 def api_bots():
+    """Lista todos os bots com métricas e logs."""
     try:
         bots = Bot.query.order_by(Bot.id).all()
         return jsonify({
-            "bots": [b.to_dict(include_diag=True) for b in bots],
+            "bots": [b.to_dict(with_meta=True) for b in bots],
             "logs": monitor_logs,
             "metrics": metrics,
             "last_action": metrics.get("last_check_ts")
@@ -240,6 +243,7 @@ def api_bots():
 
 @app.route("/api/bots", methods=["POST"])
 def add_bot():
+    """Adiciona um novo bot à base."""
     data = request.json
     if not data or not data.get("name") or not data.get("url") or not data.get("token"):
         return jsonify({"error": "Campos obrigatórios: name, url, token"}), 400
@@ -255,6 +259,7 @@ def add_bot():
 
 @app.route("/api/bots/<int:bot_id>", methods=["PUT"])
 def update_bot(bot_id):
+    """Atualiza dados de um bot existente."""
     data = request.json
     try:
         bot = Bot.query.get(bot_id)
@@ -272,6 +277,7 @@ def update_bot(bot_id):
 
 @app.route("/api/bots/<int:bot_id>", methods=["DELETE"])
 def delete_bot(bot_id):
+    """Remove um bot da base."""
     try:
         bot = Bot.query.get(bot_id)
         if not bot:
@@ -286,6 +292,7 @@ def delete_bot(bot_id):
 
 @app.route("/api/bots/<int:bot_id>/force_swap", methods=["POST"])
 def force_swap(bot_id):
+    """Força a troca manual de um bot ativo por um da reserva."""
     try:
         bot = Bot.query.get(bot_id)
         if not bot:
@@ -319,7 +326,7 @@ with app.app_context():
     except Exception as e:
         add_log(f"⚠️ Patch falhou: {e}")
 
-# Start monitor em thread separada
+# Start monitor em thread separada (com contexto Flask)
 threading.Thread(target=monitor_loop, daemon=True).start()
 
 if __name__ == "__main__":
