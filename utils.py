@@ -1,6 +1,3 @@
-# ================================
-# utils.py (versão avançada e robusta)
-# ================================
 import os
 import logging
 import requests
@@ -84,18 +81,15 @@ def carregar_links_typebot():
         return []
 
 # ================================
-# Funções de checagem (Token / URL / Probe)
+# Funções de checagem (Token / URL / Probe / Webhook)
 # ================================
 def check_token(token: str):
-    """
-    Valida o token do bot na API Telegram (/getMe).
-    Retorna (ok: bool, reason: str, username: str|None).
-    """
+    """Valida o token do bot via /getMe."""
     if not token:
         return False, "Token vazio", None
     try:
         url = f"https://api.telegram.org/bot{token}/getMe"
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=8)
         if r.status_code == 200:
             data = r.json()
             if data.get("ok"):
@@ -107,14 +101,11 @@ def check_token(token: str):
 
 
 def check_link(url: str):
-    """
-    Testa se o redirect_url do bot responde HTTP.
-    Retorna (ok: bool, reason: str).
-    """
+    """Testa se a redirect_url do bot responde HTTP."""
     if not url:
         return False, "URL não definida"
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=8)
         if 200 <= r.status_code < 400:
             return True, f"HTTP {r.status_code}"
         return False, f"HTTP {r.status_code}"
@@ -123,48 +114,66 @@ def check_link(url: str):
 
 
 def check_probe(token: str, chat_id: str):
-    """
-    Faz probe real: envia uma mensagem no grupo de monitoramento.
-    Retorna (ok: bool, reason: str).
-    - OK se a API retorna {"ok": true}.
-    - Falha se HTTP != 200 ou {"ok": false}.
-    """
+    """Faz probe real enviando mensagem no grupo de monitoramento."""
     if not token or not chat_id:
-        return None, "Probe desativado (token ou chat_id ausente)"
+        return None, "Probe desativado (token/chat_id ausente)"
     try:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = {"chat_id": chat_id, "text": "🔎 Probe check (TOK4 Monitor)"}
-        r = requests.post(url, json=payload, timeout=10)
-
-        if r.status_code == 200:
-            data = r.json()
-            if data.get("ok"):
-                return True, "Mensagem entregue"
-            return False, f"Erro API: {data.get('description')}"
-        return False, f"HTTP {r.status_code}"
+        r = requests.post(url, json=payload, timeout=8)
+        if r.status_code == 200 and r.json().get("ok"):
+            return True, "Mensagem entregue"
+        return False, f"HTTP {r.status_code} / {r.text}"
     except Exception as e:
         return False, f"Exceção: {e}"
+
+
+def check_webhook(token: str):
+    """
+    Verifica estado do webhook via /getWebhookInfo.
+    Retorna (ok: bool, reason: str, details: dict).
+    """
+    if not token:
+        return False, "Token vazio", {}
+    try:
+        url = f"https://api.telegram.org/bot{token}/getWebhookInfo"
+        r = requests.get(url, timeout=8)
+        if r.status_code != 200:
+            return False, f"Erro HTTP {r.status_code}", {}
+        data = r.json()
+        if not data.get("ok"):
+            return False, "Resposta inválida da API", data
+        info = data.get("result", {})
+
+        if info.get("url"):
+            if info.get("last_error_date"):
+                reason = f"Erro: {info.get('last_error_message')}"
+                return False, reason, info
+            if info.get("pending_update_count", 0) > 0:
+                reason = f"{info.get('pending_update_count')} updates pendentes"
+                return False, reason, info
+            return True, "Webhook ativo e saudável", info
+        else:
+            return False, "Nenhum webhook configurado", info
+    except Exception as e:
+        return False, f"Exceção: {e}", {}
 
 # ================================
 # Diagnóstico centralizado
 # ================================
 def diagnosticar_bot(bot: Bot) -> dict:
     """
-    Executa todas as checagens (token, url, probe).
+    Executa todas as checagens: token, url, probe e webhook.
     Atualiza diagnóstico no banco de dados.
     Retorna dict com status detalhado.
     """
-    # Token
     token_ok, token_reason, username = check_token(bot.token or "")
-
-    # URL
     url_ok, url_reason = check_link(bot.redirect_url or "")
-
-    # Probe (checagem real de vida)
     probe_ok, probe_reason = check_probe(bot.token, MONITOR_CHAT_ID)
+    webhook_ok, webhook_reason, webhook_details = check_webhook(bot.token)
 
-    # Decisão final (baseada fortemente no probe)
-    decision_ok = token_ok and (probe_ok is True)
+    # Decisão final mais rigorosa:
+    decision_ok = token_ok and webhook_ok and (probe_ok is True or probe_ok is None)
 
     diag = {
         "token_ok": token_ok,
@@ -174,16 +183,19 @@ def diagnosticar_bot(bot: Bot) -> dict:
         "url_reason": url_reason,
         "probe_ok": probe_ok,
         "probe_reason": probe_reason,
+        "webhook_ok": webhook_ok,
+        "webhook_reason": webhook_reason,
+        "webhook_details": webhook_details,
         "decision_ok": decision_ok
     }
 
-    # Salva no banco
+    # Sincroniza com o banco
     try:
         bot.apply_diag({
             "token_ok": token_ok,
             "url_ok": url_ok,
-            "webhook_ok": probe_ok,
-            "reason": f"T:{token_reason} | U:{url_reason} | P:{probe_reason}"
+            "webhook_ok": webhook_ok,
+            "reason": f"T:{token_reason} | U:{url_reason} | P:{probe_reason} | W:{webhook_reason}"
         })
         db.session.commit()
     except SQLAlchemyError as e:
@@ -193,8 +205,8 @@ def diagnosticar_bot(bot: Bot) -> dict:
     # Log detalhado
     status = "✅ OK" if decision_ok else "❌ FALHA"
     logger.info(f"{status} {bot.name}: "
-                f"token_ok={token_ok}, url_ok={url_ok}, probe_ok={probe_ok} "
-                f"| R:{token_reason} / {url_reason} / {probe_reason}")
+                f"token={token_ok}, url={url_ok}, probe={probe_ok}, webhook={webhook_ok} "
+                f"| R: {token_reason} / {url_reason} / {probe_reason} / {webhook_reason}")
 
     return diag
 
@@ -202,10 +214,9 @@ def diagnosticar_bot(bot: Bot) -> dict:
 # Log de eventos centralizado
 # ================================
 def log_event(bot: Bot, event: str, level: str = "info"):
-    """Centraliza logs e envia alerta via WhatsApp quando necessário."""
+    """Centraliza logs e envia alerta via WhatsApp se necessário."""
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{ts}] {bot.name if bot else 'SYSTEM'}: {event}"
-
     if level == "error":
         logger.error(line)
         send_whatsapp(f"❌ {event}")
