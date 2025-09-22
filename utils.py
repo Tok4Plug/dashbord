@@ -1,3 +1,6 @@
+# ================================
+# utils.py (versão avançada e robusta)
+# ================================
 import os
 import logging
 import requests
@@ -204,9 +207,12 @@ def diagnosticar_bot(bot: Bot) -> dict:
 
     # Log detalhado
     status = "✅ OK" if decision_ok else "❌ FALHA"
-    logger.info(f"{status} {bot.name}: "
-                f"token={token_ok}, url={url_ok}, probe={probe_ok}, webhook={webhook_ok} "
-                f"| R: {token_reason} / {url_reason} / {probe_reason} / {webhook_reason}")
+    logger.info(
+        f"{status} {bot.name}: "
+        f"token={token_ok}, url={url_ok}, probe={probe_ok}, webhook={webhook_ok} "
+        f"| R: {token_reason} / {url_reason} / {probe_reason} / {webhook_reason} "
+        f"| webhook_info={webhook_details}"
+    )
 
     return diag
 
