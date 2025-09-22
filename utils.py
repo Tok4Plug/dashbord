@@ -1,5 +1,7 @@
+# ================================
+# utils.py (versão avançada e robusta)
+# ================================
 import os
-import time
 import logging
 import requests
 from datetime import datetime
@@ -21,13 +23,13 @@ logger = logging.getLogger("utils")
 # ================================
 # Variáveis de ambiente
 # ================================
-TYPEBOT_API = os.getenv("TYPEBOT_API")       # Ex: https://typebot.io/api/v1
+TYPEBOT_API = os.getenv("TYPEBOT_API")
 TYPEBOT_FLOW_ID = os.getenv("TYPEBOT_FLOW_ID")
 
 TWILIO_SID = os.getenv("TWILIO_SID")
 TWILIO_AUTH = os.getenv("TWILIO_AUTH")
-TWILIO_FROM = os.getenv("TWILIO_FROM")      # Número WhatsApp Twilio
-ADMIN_WHATSAPP = os.getenv("ADMIN_WHATSAPP")  # Número admin no formato +55...
+TWILIO_FROM = os.getenv("TWILIO_FROM")
+ADMIN_WHATSAPP = os.getenv("ADMIN_WHATSAPP")
 
 MONITOR_CHAT_ID = os.getenv("MONITOR_CHAT_ID")
 
@@ -55,23 +57,21 @@ def send_whatsapp(msg: str):
             from_=f"whatsapp:{TWILIO_FROM}",
             to=f"whatsapp:{ADMIN_WHATSAPP}"
         )
-        logger.info("📲 Mensagem enviada ao WhatsApp")
+        logger.info("📲 WhatsApp enviado")
     except Exception as e:
         logger.error(f"❌ Erro ao enviar WhatsApp: {e}")
 
 
 def carregar_links_typebot():
-    """Busca links do flow do Typebot para debug/validação externa."""
+    """Busca links do flow no Typebot para debug/validação externa."""
     if not TYPEBOT_API or not TYPEBOT_FLOW_ID:
         logger.warning("⚠️ TYPEBOT_API ou TYPEBOT_FLOW_ID não configurados.")
         return []
-
     try:
         url = f"{TYPEBOT_API}/bots/{TYPEBOT_FLOW_ID}"
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         data = r.json()
-
         links = [
             block["content"]["url"]
             for block in data.get("blocks", [])
@@ -83,13 +83,12 @@ def carregar_links_typebot():
         send_whatsapp(f"⚠️ Erro ao carregar links do Typebot: {e}")
         return []
 
-
 # ================================
 # Funções de checagem (Token / URL / Probe)
 # ================================
 def check_token(token: str):
     """
-    Verifica se o token do bot é válido usando a API Telegram.
+    Valida o token do bot na API Telegram (/getMe).
     Retorna (ok: bool, reason: str, username: str|None).
     """
     if not token:
@@ -101,7 +100,7 @@ def check_token(token: str):
             data = r.json()
             if data.get("ok"):
                 return True, "Token válido", data["result"]["username"]
-            return False, "Token inválido (API retornou erro)", None
+            return False, f"Token inválido: {data}", None
         return False, f"Erro HTTP {r.status_code}", None
     except Exception as e:
         return False, f"Exceção: {e}", None
@@ -109,7 +108,7 @@ def check_token(token: str):
 
 def check_link(url: str):
     """
-    Testa se o redirect_url do bot está online.
+    Testa se o redirect_url do bot responde HTTP.
     Retorna (ok: bool, reason: str).
     """
     if not url:
@@ -125,76 +124,87 @@ def check_link(url: str):
 
 def check_probe(token: str, chat_id: str):
     """
-    Envia uma mensagem de teste ao grupo de monitoramento.
+    Faz probe real: envia uma mensagem no grupo de monitoramento.
     Retorna (ok: bool, reason: str).
+    - OK se a API retorna {"ok": true}.
+    - Falha se HTTP != 200 ou {"ok": false}.
     """
     if not token or not chat_id:
         return None, "Probe desativado (token ou chat_id ausente)"
     try:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        r = requests.post(url, json={"chat_id": chat_id, "text": "🔎 Probe check"}, timeout=10)
+        payload = {"chat_id": chat_id, "text": "🔎 Probe check (TOK4 Monitor)"}
+        r = requests.post(url, json=payload, timeout=10)
+
         if r.status_code == 200:
-            return True, "Mensagem enviada"
+            data = r.json()
+            if data.get("ok"):
+                return True, "Mensagem entregue"
+            return False, f"Erro API: {data.get('description')}"
         return False, f"HTTP {r.status_code}"
     except Exception as e:
         return False, f"Exceção: {e}"
 
-
 # ================================
-# Diagnóstico e Banco
+# Diagnóstico centralizado
 # ================================
 def diagnosticar_bot(bot: Bot) -> dict:
     """
-    Executa todas as checagens de um bot (token, url, probe).
-    Atualiza os campos de diagnóstico no banco.
-    Retorna dict com diagnóstico detalhado.
+    Executa todas as checagens (token, url, probe).
+    Atualiza diagnóstico no banco de dados.
+    Retorna dict com status detalhado.
     """
-    diag = {}
-
     # Token
     token_ok, token_reason, username = check_token(bot.token or "")
-    diag["token_ok"] = token_ok
-    diag["token_reason"] = token_reason
-    diag["username"] = username
 
     # URL
     url_ok, url_reason = check_link(bot.redirect_url or "")
-    diag["url_ok"] = url_ok
-    diag["url_reason"] = url_reason
 
-    # Probe
+    # Probe (checagem real de vida)
     probe_ok, probe_reason = check_probe(bot.token, MONITOR_CHAT_ID)
-    diag["probe_ok"] = probe_ok
-    diag["probe_reason"] = probe_reason
 
-    # Decisão final
-    diag["decision_ok"] = token_ok and url_ok and (probe_ok or probe_ok is None)
+    # Decisão final (baseada fortemente no probe)
+    decision_ok = token_ok and (probe_ok is True)
 
-    # Sincroniza no banco
+    diag = {
+        "token_ok": token_ok,
+        "token_reason": token_reason,
+        "username": username,
+        "url_ok": url_ok,
+        "url_reason": url_reason,
+        "probe_ok": probe_ok,
+        "probe_reason": probe_reason,
+        "decision_ok": decision_ok
+    }
+
+    # Salva no banco
     try:
         bot.apply_diag({
             "token_ok": token_ok,
             "url_ok": url_ok,
-            "webhook_ok": probe_ok,   # proxy do probe
+            "webhook_ok": probe_ok,
             "reason": f"T:{token_reason} | U:{url_reason} | P:{probe_reason}"
         })
         db.session.commit()
     except SQLAlchemyError as e:
         db.session.rollback()
-        logger.error(f"❌ Erro ao salvar diagnóstico de {bot.name}: {e}")
+        logger.error(f"❌ Erro ao salvar diagnóstico do {bot.name}: {e}")
+
+    # Log detalhado
+    status = "✅ OK" if decision_ok else "❌ FALHA"
+    logger.info(f"{status} {bot.name}: "
+                f"token_ok={token_ok}, url_ok={url_ok}, probe_ok={probe_ok} "
+                f"| R:{token_reason} / {url_reason} / {probe_reason}")
 
     return diag
-
 
 # ================================
 # Log de eventos centralizado
 # ================================
 def log_event(bot: Bot, event: str, level: str = "info"):
-    """
-    Loga eventos do bot com timestamp, envia para WhatsApp se crítico.
-    """
+    """Centraliza logs e envia alerta via WhatsApp quando necessário."""
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{ts}] {event}"
+    line = f"[{ts}] {bot.name if bot else 'SYSTEM'}: {event}"
 
     if level == "error":
         logger.error(line)
