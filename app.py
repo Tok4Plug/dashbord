@@ -139,10 +139,8 @@ def _run_checks_once(bot):
     probe_ok, probe_reason = check_probe(bot.token, MONITOR_CHAT_ID)
     webhook_ok, webhook_reason, webhook_info = check_webhook(bot.token or "")
 
-    # Critério principal: token e probe
     decision_ok = bool(token_ok and (probe_ok is True or probe_ok is None))
 
-    # Se webhook falhou mas bot responde, apenas alerta
     if decision_ok and not webhook_ok:
         add_log(f"⚠️ {bot.name}: webhook falhou ({webhook_reason}), mas bot responde normalmente.")
 
@@ -316,6 +314,11 @@ def api_bots():
 def create_bot():
     try:
         data = request.json or {}
+        if not data.get("redirect_url"):
+            return jsonify({"error": "redirect_url é obrigatório"}), 400
+        if not data.get("name") or not data.get("token"):
+            return jsonify({"error": "name e token são obrigatórios"}), 400
+
         new_bot = Bot(
             name=data.get("name"),
             token=data.get("token"),
@@ -338,6 +341,9 @@ def update_bot(bot_id):
         if not bot:
             return jsonify({"error": "Bot não encontrado"}), 404
         data = request.json or {}
+        if "redirect_url" in data and not data.get("redirect_url"):
+            return jsonify({"error": "redirect_url não pode ser vazio"}), 400
+
         bot.name = data.get("name", bot.name)
         bot.token = data.get("token", bot.token)
         bot.redirect_url = data.get("redirect_url", bot.redirect_url)
