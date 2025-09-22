@@ -5,206 +5,197 @@
   <title>Dashboard - TOK4 PLUG</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    :root {
-      --bg:#0b0312; --panel:#181028; --accent:#7b2cff; --accent-2:#9b55ff;
-      --muted:#9aa0a6; --card:#221533; --ok:#22c55e; --warn:#ffb020; --danger:#ff4d6d;
-      --toast-bg:#2a1a3a; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+    :root{
+      --bg:#0b0312; --panel:#181028; --card:#221533;
+      --accent:#7b2cff; --accent-2:#9b55ff; --muted:#9aa0a6;
+      --ok:#22c55e; --warn:#ffb020; --danger:#ff4d6d; --info:#38bdf8;
+      --chip-bg:#140c22; --chip-bd:#2a1a3a; --toast-bg:#2a1a3a;
+      font-family: Inter, system-ui, -apple-system,"Segoe UI", Roboto, Arial;
     }
-    body { background:var(--bg); color:#fff; margin:0; padding:20px; }
-    .container { max-width:1400px; margin:0 auto; }
-    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
-    h1 { font-weight:800; color:var(--accent); margin:0; font-size:30px; letter-spacing:-0.5px; }
-    .top-actions { display:flex; gap:12px; }
-    button { border:0; padding:9px 16px; border-radius:8px; cursor:pointer; transition:all .2s; font-weight:600; font-size:14px; }
-    button.primary { background:linear-gradient(90deg,var(--accent),var(--accent-2)); color:#fff; box-shadow:0 3px 12px rgba(123,44,255,0.3); }
-    button.primary:hover { transform:scale(1.06); }
-    button.ghost { background:transparent; border:1px solid rgba(255,255,255,0.08); color:var(--muted); }
-    button.ghost:hover { border-color:var(--accent-2); color:#fff; }
-    .stats { display:flex; gap:14px; margin-bottom:20px; flex-wrap:wrap; }
-    .stat { background:var(--card); padding:18px; border-radius:12px; flex:1; min-width:180px; display:flex; flex-direction:column; align-items:flex-start; }
-    .stat .label { font-size:13px; color:var(--muted); }
-    .stat .value { font-size:24px; font-weight:700; margin-top:6px; }
-    .panel { background:var(--panel); padding:20px; border-radius:14px; box-shadow:0 4px 20px rgba(0,0,0,0.4); }
-    table { width:100%; border-collapse:collapse; margin-top:12px; color:#fff; font-size:14px; }
-    th,td { padding:12px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.05); }
-    th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0.5px; }
-    .pill { padding:6px 12px; border-radius:999px; font-size:12px; font-weight:600; }
-    .activo { background:rgba(34,197,94,0.12); color:var(--ok); border:1px solid rgba(34,197,94,0.18); }
-    .reserva { background:rgba(155,85,255,0.12); color:var(--accent-2); border:1px solid rgba(155,85,255,0.18); }
-    .ok { color:var(--ok); font-weight:600; }
-    .fail { color:var(--danger); font-weight:600; }
-    .logs { margin-top:18px; background:#12081d; padding:14px; border-radius:10px; max-height:280px; overflow-y:auto; font-size:13px; color:#cfcfe5; line-height:1.5; }
-    .logs div.warn { color:var(--warn); }
-    .logs div.ok { color:var(--ok); }
-    .logs div.error { color:var(--danger); }
-    input,select { background:var(--card); border:1px solid rgba(255,255,255,0.15); color:#fff; padding:10px; border-radius:6px; width:100%; font-size:14px; }
-    select { cursor:pointer; }
-    .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); align-items:center; justify-content:center; z-index:1000; }
-    .modal-content { background:var(--panel); padding:22px; border-radius:14px; width:420px; box-shadow:0 6px 30px rgba(0,0,0,.6); }
-    .modal h3 { margin:0 0 14px; font-size:18px; font-weight:700; }
-    .modal .actions { display:flex; justify-content:flex-end; gap:10px; margin-top:16px; }
+    *{box-sizing:border-box}
+    body{margin:0; background:var(--bg); color:#fff; padding:20px}
+    .container{max-width:1600px; margin:0 auto}
+
+    /* Header */
+    header{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:18px; flex-wrap:wrap}
+    h1{margin:0; font-size:28px; font-weight:900; color:var(--accent); letter-spacing:-.5px}
+    .top-actions{display:flex; gap:10px; flex-wrap:wrap}
+    button{border:0; padding:9px 14px; border-radius:8px; cursor:pointer; transition:.2s; font-weight:600; font-size:14px}
+    button.primary{background:linear-gradient(90deg,var(--accent),var(--accent-2)); color:#fff; box-shadow:0 3px 12px rgba(123,44,255,.3)}
+    button.primary:hover{transform:scale(1.05)}
+    button.ghost{background:transparent; border:1px solid rgba(255,255,255,.1); color:#fff}
+    button.ghost:hover{border-color:var(--accent-2)}
+    .input{background:var(--card); border:1px solid rgba(255,255,255,.15); color:#fff; padding:10px 12px; border-radius:8px; font-size:14px; outline:none}
+
+    /* Stats */
+    .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin:16px 0}
+    .stat{background:var(--card); border:1px solid rgba(255,255,255,.06); padding:16px; border-radius:12px; transition:.3s; text-align:center; animation:fadeIn .6s ease}
+    .stat:hover{transform:translateY(-3px) scale(1.02); box-shadow:0 6px 18px rgba(0,0,0,.4)}
+    .stat .label{color:var(--muted); font-size:12px}
+    .stat .value{font-size:22px; font-weight:800; margin-top:6px}
+    .stat.warn .value{color:var(--warn)}
+    .stat.danger .value{color:var(--danger)}
+    .stat.ok .value{color:var(--ok)}
+
+    /* Painel */
+    .panel{background:var(--panel); border:1px solid rgba(255,255,255,.06); padding:18px; border-radius:14px; box-shadow:0 6px 24px rgba(0,0,0,.35); animation:slideIn .7s ease}
+    table{width:100%; border-collapse:collapse; color:#fff; font-size:14px}
+    th, td{padding:10px 8px; border-bottom:1px solid rgba(255,255,255,.06); vertical-align:middle}
+    th{font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; background:var(--panel); position:sticky; top:0; z-index:1}
+    tr:hover td{background:rgba(255,255,255,.03)}
+
+    /* Estados */
+    .pill{padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; border:1px solid; display:inline-block}
+    .pill.activo{color:var(--ok); background:rgba(34,197,94,.12); border-color:rgba(34,197,94,.25)}
+    .pill.reserva{color:var(--accent-2); background:rgba(155,85,255,.12); border-color:rgba(155,85,255,.25)}
+
+    /* Chips */
+    .chip{display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid var(--chip-bd); background:var(--chip-bg); font-size:12px; margin:2px 0}
+    .chip.ok{color:var(--ok); border-color:rgba(34,197,94,.25); background:rgba(34,197,94,.08)}
+    .chip.fail{color:var(--danger); border-color:rgba(255,77,109,.25); background:rgba(255,77,109,.08)}
+    .chip.warn{color:var(--warn); border-color:rgba(255,176,32,.25); background:rgba(255,176,32,.08)}
+    .chip.info{color:var(--info); border-color:rgba(56,189,248,.25); background:rgba(56,189,248,.08)}
+
+    /* Logs */
+    .logs{margin-top:14px; background:#12081d; border:1px solid rgba(255,255,255,.06); padding:12px; border-radius:10px; max-height:280px; overflow:auto; font-size:12.5px; color:#cfcfe5; line-height:1.45}
+    .logs div.warn{color:var(--warn)} .logs div.ok{color:var(--ok)} .logs div.error{color:var(--danger)}
+
+    /* Drawer */
+    .drawer{position:fixed; top:0; right:-500px; width:420px; height:100%; background:var(--panel); box-shadow:-4px 0 18px rgba(0,0,0,.6); transition:.3s; z-index:3000; padding:20px; overflow-y:auto}
+    .drawer.open{right:0}
+    .drawer h2{margin-top:0; font-size:20px; color:var(--accent-2)}
+    .drawer pre{background:#0f0718; border:1px solid rgba(255,255,255,.08); padding:12px; border-radius:8px; font-size:12px; color:#eee; overflow-x:auto}
 
     /* Toasts */
-    .toast { position:fixed; bottom:20px; right:20px; background:var(--toast-bg); color:#fff; padding:12px 18px; border-radius:8px; margin-top:10px; opacity:0; transform:translateY(20px); transition:all .3s; z-index:2000; box-shadow:0 2px 12px rgba(0,0,0,0.5); }
-    .toast.show { opacity:1; transform:translateY(0); }
+    .toast{position:fixed; bottom:20px; right:20px; background:var(--toast-bg); color:#fff; padding:12px 18px; border-radius:8px; opacity:0; transform:translateY(20px); transition:.25s; z-index:4000; box-shadow:0 2px 12px rgba(0,0,0,.5)}
+    .toast.show{opacity:1; transform:translateY(0)}
+
+    /* Animations */
+    @keyframes fadeIn{from{opacity:0; transform:translateY(10px)}to{opacity:1; transform:translateY(0)}}
+    @keyframes slideIn{from{opacity:0; transform:translateY(20px)}to{opacity:1; transform:translateY(0)}}
+
+    /* Responsivo */
+    @media(max-width:900px){
+      table, thead, tbody, th, td, tr{display:block}
+      th{display:none}
+      td{border:none; padding:8px 0}
+      tr{border-bottom:1px solid rgba(255,255,255,.08); margin-bottom:14px}
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>TOK4 <span style="color:var(--accent-2)">PLUG</span></h1>
-      <div class="top-actions">
-        <button class="primary" id="btn-open-add">➕ Adicionar Bot</button>
-        <button class="ghost" id="btn-refresh">🔄 Atualizar</button>
-      </div>
-    </header>
-
-    <div class="stats">
-      <div class="stat"><div class="label">Ativos</div><div id="count-ativos" class="value">0</div></div>
-      <div class="stat"><div class="label">Reserva</div><div id="count-reserva" class="value">0</div></div>
-      <div class="stat"><div class="label">Última ação</div><div id="last-action" class="value">—</div></div>
-      <div class="stat"><div class="label">Checagens</div><div id="checks-total" class="value">0</div></div>
-      <div class="stat"><div class="label">Falhas</div><div id="failures-total" class="value">0</div></div>
-      <div class="stat"><div class="label">Trocas</div><div id="switches-total" class="value">0</div></div>
+<div class="container">
+  <header>
+    <h1>TOK4 <span style="color:var(--accent-2)">PLUG</span></h1>
+    <div class="top-actions row">
+      <input id="search" class="input" placeholder="Pesquisar…" style="min-width:200px">
+      <select id="filter-health" class="input">
+        <option value="">Saúde: todos</option><option value="ok">OK</option><option value="fail">Falha</option>
+      </select>
+      <select id="filter-status" class="input">
+        <option value="">Status: todos</option><option value="ativo">Ativo</option><option value="reserva">Reserva</option>
+      </select>
+      <button class="ghost" id="btn-refresh">🔄 Atualizar</button>
     </div>
+  </header>
 
-    <div class="panel">
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th><th>Nome</th><th>Status</th><th>Saúde Detectada</th>
-            <th>Falhas</th><th>Último OK</th><th>Última Razão</th><th>Redirect</th><th>Ações</th>
-          </tr>
-        </thead>
-        <tbody id="bots-tbody"></tbody>
-      </table>
-      <div class="logs" id="logs"></div>
-    </div>
-
-    <!-- Modal -->
-    <div class="modal" id="modal">
-      <div class="modal-content">
-        <h3 id="modal-title">Adicionar Bot</h3>
-        <div style="display:flex;flex-direction:column; gap:12px;">
-          <input id="f-name" type="text" placeholder="Nome do Bot">
-          <input id="f-token" type="text" placeholder="Token do Bot (opcional)">
-          <input id="f-redirect" type="url" placeholder="Redirect URL (https://...)">
-          <select id="f-status">
-            <option value="ativo">Ativo</option>
-            <option value="reserva">Reserva</option>
-          </select>
-          <div class="actions">
-            <button class="ghost" onclick="closeModal()">Cancelar</button>
-            <button class="primary" onclick="saveBot()">Salvar</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Toast container -->
-    <div id="toasts"></div>
+  <!-- Estatísticas -->
+  <div id="stats" class="stats">
+    <div class="stat"><div class="label">Ativos</div><div id="count-ativos" class="value">0</div></div>
+    <div class="stat"><div class="label">Reservas</div><div id="count-reserva" class="value">0</div></div>
+    <div class="stat"><div class="label">Checagens</div><div id="checks-total" class="value">0</div></div>
+    <div class="stat danger"><div class="label">Falhas</div><div id="failures-total" class="value">0</div></div>
+    <div class="stat ok"><div class="label">Trocas</div><div id="switches-total" class="value">0</div></div>
+    <div class="stat"><div class="label">Última verificação</div><div id="last-action" class="value">—</div></div>
   </div>
 
+  <!-- Painel -->
+  <div class="panel">
+    <div class="toolbar">
+      <div class="row">
+        <span id="monitor-lock-badge" class="badge">lock…</span>
+        <span id="policy-badge" class="badge amber">policy …</span>
+      </div>
+      <div class="row tiny muted">Clique no nome do bot para ver detalhes completos →</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Nome</th><th>Status</th><th>Saúde</th>
+          <th>Token</th><th>Webhook</th><th>URL</th><th>Probe</th>
+          <th>Checks</th><th>Último OK</th><th>Ações</th>
+        </tr>
+      </thead>
+      <tbody id="bots-tbody"></tbody>
+    </table>
+
+    <div class="logs" id="logs"></div>
+  </div>
+</div>
+
+<!-- Drawer lateral -->
+<div class="drawer" id="drawer">
+  <h2 id="drawer-title">Detalhes do Bot</h2>
+  <div id="drawer-content"></div>
+</div>
+
+<div id="toasts"></div>
+
 <script>
-  function qs(sel){return document.querySelector(sel)}
-  function showToast(msg){
-    const el=document.createElement("div");
-    el.className="toast"; el.innerText=msg;
-    document.getElementById("toasts").appendChild(el);
-    setTimeout(()=>el.classList.add("show"),50);
-    setTimeout(()=>{el.classList.remove("show"); setTimeout(()=>el.remove(),300)},4000);
-  }
+  const qs = s=>document.querySelector(s);
+  const esc = s=>s?s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])):"";
+  const formatDt = s=>s?new Date(s).toLocaleString():"—";
+  const toast = msg=>{const el=document.createElement('div');el.className='toast';el.textContent=msg;
+    document.body.appendChild(el);requestAnimationFrame(()=>el.classList.add('show'));
+    setTimeout(()=>{el.classList.remove('show');setTimeout(()=>el.remove(),200)},3500)};
+  let DATA={bots:[],logs:[],metrics:{},last_action:null},FILTER={text:"",status:"",health:""};
 
-  async function refreshData(){
-    const res = await fetch("/api/bots");
-    const data = await res.json();
-    renderTable(data.bots);
-    renderLogs(data.logs||[]);
-    if(data.last_action) qs("#last-action").innerText=new Date(data.last_action*1000).toLocaleString();
-    qs("#checks-total").innerText=data.metrics.checks_total||0;
-    qs("#failures-total").innerText=data.metrics.failures_total||0;
-    qs("#switches-total").innerText=data.metrics.switches_total||0;
+  async function fetchData(){
+    const r=await fetch('/api/bots',{cache:'no-store'});if(!r.ok){toast('Erro na API');return}
+    DATA=await r.json();renderAll();
   }
-
-  function renderTable(bots){
-    const tbody=qs("#bots-tbody"); tbody.innerHTML="";
-    let ativos=0,reserva=0;
-    bots.forEach(b=>{
-      if(b.status==="ativo") ativos++; else reserva++;
-      const tr=document.createElement("tr");
-      const health = b.failures>0 ? `<span class="fail">❌ Falha</span>` : `<span class="ok">✅ OK</span>`;
-      tr.innerHTML=`
-        <td>${b.id}</td>
-        <td>${escapeHtml(b.name)}</td>
-        <td><span class="pill ${b.status==="ativo"?"activo":"reserva"}">${b.status}</span></td>
-        <td>${health}</td>
-        <td class="${b.failures>0?'fail':''}">${b.failures||0}</td>
-        <td>${b.last_ok ? new Date(b.last_ok).toLocaleString() : "—"}</td>
-        <td>${escapeHtml(b.last_reason||"—")}</td>
-        <td><a href="${escapeAttr(b.redirect_url)}" target="_blank">${escapeHtml(b.redirect_url)}</a></td>
-        <td>
-          <button class="ghost" onclick="openEdit(${b.id})">✏️</button>
-          <button class="ghost" onclick="forceSwap(${b.id})">🔁</button>
-          <button class="ghost" onclick="deleteBot(${b.id})">🗑️</button>
-        </td>`;
-      tbody.appendChild(tr);
-    });
-    qs("#count-ativos").innerText=ativos;
-    qs("#count-reserva").innerText=reserva;
+  function renderAll(){
+    const m=DATA.metrics||{};
+    qs('#checks-total').textContent=m.checks_total??0;
+    qs('#failures-total').textContent=m.failures_total??0;
+    qs('#switches-total').textContent=m.switches_total??0;
+    if(DATA.last_action)qs('#last-action').textContent=new Date(DATA.last_action*1000).toLocaleString();
+    let a=0,r=0;(DATA.bots||[]).forEach(b=>b.status==='ativo'?a++:r++);qs('#count-ativos').textContent=a;qs('#count-reserva').textContent=r;
+    const hasLock=m.monitor_has_lock;qs('#monitor-lock-badge').textContent=hasLock?'monitor: lock OK':'monitor: sem lock';qs('#monitor-lock-badge').className='badge '+(hasLock?'green':'red');
+    let policy='';for(const b of(DATA.bots||[])){if(b._diag&&b._diag.policy_reason){policy=b._diag.policy_reason;break}}qs('#policy-badge').textContent=policy||'policy indisponível';
+    renderTable();renderLogs(DATA.logs||[]);
   }
-
-  function renderLogs(logs){
-    const box=qs("#logs"); box.innerHTML="";
-    logs.forEach(l=>{
-      let cls=""; if(l.includes("⚠️")) cls="warn"; if(l.includes("✅")) cls="ok"; if(l.includes("❌")) cls="error";
-      const div=document.createElement("div"); div.className=cls; div.innerText=l; box.appendChild(div);
-    });
-    box.scrollTop=box.scrollHeight;
-  }
-
-  function escapeHtml(s){return s? s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])):""}
-  function escapeAttr(s){return s? s.replace(/"/g,"&quot;"):""}
-
-  // Modal
-  let editingId=null;
-  function openAdd(){editingId=null;resetForm();qs("#modal-title").innerText="Adicionar Bot";qs("#modal").style.display="flex";}
-  function openEdit(id){
-    editingId=id;
-    fetch('/api/bots').then(r=>r.json()).then(d=>{
-      const bot=d.bots.find(x=>x.id===id); if(!bot) return;
-      qs("#modal-title").innerText="Editar Bot";
-      qs("#f-name").value=bot.name; qs("#f-token").value=bot.token||""; qs("#f-redirect").value=bot.redirect_url; qs("#f-status").value=bot.status;
-      qs("#modal").style.display="flex";
-    });
-  }
-  function closeModal(){qs("#modal").style.display="none"; editingId=null;}
-  function resetForm(){qs("#f-name").value="";qs("#f-token").value="";qs("#f-redirect").value="";qs("#f-status").value="reserva";}
-
-  async function saveBot(){
-    const body={name:qs("#f-name").value.trim(),token:qs("#f-token").value.trim(),redirect_url:qs("#f-redirect").value.trim(),status:qs("#f-status").value};
-    if(!body.name||!body.redirect_url) return showToast("⚠️ Nome e Redirect são obrigatórios");
-    const method=editingId?"PUT":"POST";
-    const url=editingId?`/api/bots/${editingId}`:"/api/bots";
-    const res=await fetch(url,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    if(res.ok){ showToast("✅ Bot salvo com sucesso"); closeModal(); refreshData(); }
-    else { const err=await res.json(); showToast("❌ Erro: "+(err.error||"falha")); }
-  }
-  async function deleteBot(id){
-    if(!confirm("Excluir este bot?")) return;
-    const res=await fetch(`/api/bots/${id}`,{method:"DELETE"});
-    if(res.ok){ showToast("✅ Bot excluído"); refreshData(); }
-    else showToast("❌ Erro ao excluir");
-  }
-  async function forceSwap(id){
-    if(!confirm("Forçar troca deste bot?")) return;
-    await fetch(`/api/bots/${id}/force_swap`,{method:"POST"});
-    showToast("🔁 Swap forçado"); refreshData();
-  }
-
-  qs("#btn-open-add").addEventListener("click",openAdd);
-  qs("#btn-refresh").addEventListener("click",refreshData);
-
-  refreshData(); setInterval(refreshData,15000);
+  function matchFilter(b){const t=(FILTER.text||'').toLowerCase().trim();if(t&&!(`${b.name||''} ${b.redirect_url||''}`.toLowerCase().includes(t)))return false;
+    if(FILTER.status&&b.status!==FILTER.status)return false;
+    const ok=(b._diag&&typeof b._diag.decision_ok==='boolean')?b._diag.decision_ok:((b.failures||0)===0);
+    if(FILTER.health==='ok'&&!ok)return false;if(FILTER.health==='fail'&&ok)return false;return true}
+  function renderTable(){const tbody=qs('#bots-tbody');tbody.innerHTML='';(DATA.bots||[]).filter(matchFilter).forEach(b=>{
+    const d=b._diag||{},ok=(typeof d.decision_ok==='boolean')?d.decision_ok:((b.failures||0)===0);
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${b.id}</td><td><a href="#" onclick="openDrawer(${b.id});return false;">${esc(b.name||'')}</a></td>
+    <td><span class="pill ${b.status==='ativo'?'activo':'reserva'}">${b.status}</span></td>
+    <td>${ok?'<span class="ok">✅</span>':'<span class="fail">❌</span>'}</td>
+    <td>${d.token_ok===false?'<span class="chip fail">token</span>':'<span class="chip ok">token</span>'}</td>
+    <td>${d.webhook_ok===false?'<span class="chip fail">webhook</span>':'<span class="chip ok">webhook</span>'}</td>
+    <td>${d.url_ok===false?'<span class="chip fail">url</span>':'<span class="chip ok">url</span>'}</td>
+    <td>${d.probe_ok===false?'<span class="chip fail">probe</span>':'<span class="chip ok">probe</span>'}</td>
+    <td class="mono">${b.failures||0}</td><td class="tiny">${formatDt(b.last_ok)}</td>
+    <td><button class="ghost tiny" onclick="forceSwap(${b.id})">🔁</button> <button class="ghost tiny" onclick="del(${b.id})">🗑</button></td>`;
+    tbody.appendChild(tr)});}
+  function renderLogs(logs){const box=qs('#logs');box.innerHTML='';logs.forEach(l=>{let cls='';if(l.includes('⚠️'))cls='warn';if(l.includes('✅'))cls='ok';if(l.includes('❌')||l.includes('⛔'))cls='error';
+    const div=document.createElement('div');div.className=cls;div.textContent=l;box.appendChild(div)});box.scrollTop=box.scrollHeight}
+  function openDrawer(id){const b=(DATA.bots||[]).find(x=>x.id===id);if(!b)return;qs('#drawer').classList.add('open');qs('#drawer-title').textContent=`${b.name} (#${b.id})`;
+    const d=b._diag||{};qs('#drawer-content').innerHTML=`<p>Status: <b>${b.status}</b></p><p>Redirect: ${esc(b.redirect_url||'')}</p>
+    <p>Último OK: ${formatDt(b.last_ok)}</p><h3>Diagnóstico Completo</h3><pre>${esc(JSON.stringify(d,null,2))}</pre>`}
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')qs('#drawer').classList.remove('open')});
+  async function forceSwap(id){await fetch(`/api/bots/${id}/force_swap`,{method:'POST'});toast('🔁 Swap solicitado');fetchData()}
+  async function del(id){if(!confirm('Excluir bot?'))return;await fetch(`/api/bots/${id}`,{method:'DELETE'});toast('✅ Excluído');fetchData()}
+  qs('#btn-refresh').addEventListener('click',fetchData);
+  qs('#search').addEventListener('input',e=>{FILTER.text=e.target.value;renderTable()});
+  qs('#filter-status').addEventListener('change',e=>{FILTER.status=e.target.value;renderTable()});
+  qs('#filter-health').addEventListener('change',e=>{FILTER.health=e.target.value;renderTable()});
+  fetchData();setInterval(fetchData,15000);
 </script>
 </body>
 </html>
