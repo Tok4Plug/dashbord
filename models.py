@@ -31,8 +31,8 @@ class Bot(db.Model):
     # ---------- Identificação ----------
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(100), nullable=False, unique=True, index=True)
-    token = db.Column(db.String(255), nullable=True)
-    redirect_url = db.Column(db.String(500), nullable=False, index=True)
+    token = db.Column(db.String(255), nullable=False)  # obrigatório
+    redirect_url = db.Column(db.String(500), nullable=False, index=True)  # obrigatório
 
     # ---------- Status ----------
     status = db.Column(db.String(20), default="reserva", index=True)  # ativo | reserva | inativo
@@ -114,19 +114,6 @@ class Bot(db.Model):
     def apply_diag(self, diag: dict):
         """
         Aplica resultados de diagnóstico ao registro.
-        Exemplo esperado:
-        {
-            "token_ok": True,
-            "url_ok": True,
-            "webhook_ok": False,
-            "last_token_http": 200,
-            "last_url_http": 200,
-            "last_webhook_url": "https://...",
-            "last_webhook_error": "Read timeout",
-            "last_webhook_error_at": datetime.utcnow(),
-            "pending_update_count": 0,
-            "reason": "Token válido | URL OK | Webhook erro timeout"
-        }
         """
         self.last_token_ok = diag.get("token_ok")
         self.last_url_ok = diag.get("url_ok")
@@ -145,13 +132,7 @@ class Bot(db.Model):
         self.last_reason = diag.get("reason")
 
     def is_healthy(self) -> bool:
-        """
-        Avalia se o bot está saudável.
-        Critérios:
-        - Token válido
-        - URL válida
-        - Webhook não crítico (True ou None)
-        """
+        """Avalia se o bot está saudável."""
         return (
             (self.last_token_ok is True)
             and (self.last_url_ok is True)
@@ -159,10 +140,7 @@ class Bot(db.Model):
         )
 
     def failure_ratio(self) -> float:
-        """
-        Calcula taxa de falhas relativa ao tempo de vida do bot.
-        Útil para relatórios e comparação no dashboard.
-        """
+        """Calcula taxa de falhas relativa ao tempo de vida do bot."""
         if not self.created_at:
             return float(self.failures or 0)
         total_seconds = (datetime.utcnow() - self.created_at).total_seconds()
@@ -175,27 +153,22 @@ class Bot(db.Model):
     # ====================================================
     @classmethod
     def get_active(cls):
-        """Retorna lista de bots ativos."""
         return cls.query.filter_by(status="ativo").all()
 
     @classmethod
     def get_reserve(cls):
-        """Retorna lista de bots em reserva."""
         return cls.query.filter_by(status="reserva").all()
 
     @classmethod
     def get_inactive(cls):
-        """Retorna lista de bots inativos."""
         return cls.query.filter_by(status="inativo").all()
 
     @classmethod
     def get_oldest_updated(cls):
-        """Retorna o bot mais antigo (baseado no updated_at)."""
         return cls.query.order_by(cls.updated_at.asc()).first()
 
     @classmethod
     def stats(cls):
-        """Retorna estatísticas globais: total, falhas e último update."""
         return db.session.query(
             func.count(cls.id).label("total"),
             func.sum(cls.failures).label("total_failures"),
@@ -206,7 +179,6 @@ class Bot(db.Model):
     # Serialização
     # ====================================================
     def to_dict(self, with_meta: bool = True, include_diag: bool = True) -> dict:
-        """Serializa objeto Bot em dict compatível com API/Dashboard."""
         base = {
             "id": self.id,
             "name": self.name,
