@@ -15,255 +15,6 @@
     *{box-sizing:border-box}
     body{margin:0; background:var(--bg); color:#fff; padding:20px}
     .container{max-width:1700px; margin:0 auto}
-
-    header{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:20px; flex-wrap:wrap}
-    h1{margin:0; font-size:44px; font-weight:900;
-      background:linear-gradient(90deg,var(--accent),var(--accent-2));
-      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-      animation:glow 3s ease-in-out infinite alternate}
-    @keyframes glow{
-      from{text-shadow:0 0 10px var(--accent),0 0 20px var(--accent-2)}
-      to{text-shadow:0 0 25px var(--accent-2),0 0 45px var(--accent)}
-    }
-
-    .top-actions{display:flex; gap:10px; flex-wrap:wrap}
-    button{border:0; padding:9px 14px; border-radius:8px; cursor:pointer; transition:.2s; font-weight:600; font-size:14px}
-    button.primary{background:linear-gradient(90deg,var(--accent),var(--accent-2)); color:#fff; box-shadow:0 3px 12px rgba(123,44,255,.3)}
-    button.primary:hover{transform:scale(1.05)}
-    button.ghost{background:transparent; border:1px solid rgba(255,255,255,.1); color:#fff}
-    button.ghost:hover{border-color:var(--accent-2)}
-    .input{background:var(--card); border:1px solid rgba(255,255,255,.15); color:#fff; padding:10px 12px; border-radius:8px; font-size:14px; outline:none}
-
-    .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin:16px 0}
-    .stat{background:var(--card); border:1px solid rgba(255,255,255,.06); padding:18px; border-radius:12px; transition:.3s; text-align:center}
-    .stat:hover{transform:translateY(-3px) scale(1.02); box-shadow:0 6px 18px rgba(0,0,0,.4)}
-    .stat .label{color:var(--muted); font-size:12px}
-    .stat .value{font-size:26px; font-weight:800; margin-top:6px}
-    .stat.warn .value{color:var(--warn)}
-    .stat.danger .value{color:var(--danger)}
-    .stat.ok .value{color:var(--ok)}
-
-    .panel{background:var(--panel); border:1px solid rgba(255,255,255,.06); padding:20px; border-radius:14px; box-shadow:0 6px 24px rgba(0,0,0,.35); margin-bottom:20px}
-    table{width:100%; border-collapse:collapse; color:#fff; font-size:14px}
-    th, td{padding:10px 8px; border-bottom:1px solid rgba(255,255,255,.06); vertical-align:middle}
-    th{font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; background:var(--panel); position:sticky; top:0; z-index:1}
-    tr:hover td{background:rgba(255,255,255,.03)}
-
-    .pill{padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; border:1px solid; display:inline-block}
-    .pill.activo{color:var(--ok); background:rgba(34,197,94,.12); border-color:rgba(34,197,94,.25)}
-    .pill.reserva{color:var(--accent-2); background:rgba(155,85,255,.12); border-color:rgba(155,85,255,.25)}
-
-    .chip{display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid var(--chip-bd); background:var(--chip-bg); font-size:12px; margin:2px 0}
-    .chip.ok{color:var(--ok); border-color:rgba(34,197,94,.25); background:rgba(34,197,94,.08)}
-    .chip.fail{color:var(--danger); border-color:rgba(255,77,109,.25); background:rgba(255,77,109,.08)}
-
-    .logs{margin-top:14px; background:#12081d; border:1px solid rgba(255,255,255,.06); padding:12px; border-radius:10px; max-height:300px; overflow:auto; font-size:12.5px; color:#cfcfe5; line-height:1.45}
-    .logs div.warn{color:var(--warn)} .logs div.ok{color:var(--ok)} .logs div.error{color:var(--danger)}
-
-    .drawer{position:fixed; top:0; right:-500px; width:420px; height:100%; background:var(--panel); box-shadow:-4px 0 18px rgba(0,0,0,.6); transition:.3s; z-index:3000; padding:20px; overflow-y:auto}
-    .drawer.open{right:0}
-    .drawer h2{margin-top:0; font-size:20px; color:var(--accent-2)}
-
-    .toast{position:fixed; bottom:20px; right:20px; background:var(--toast-bg); color:#fff; padding:12px 18px; border-radius:8px; opacity:0; transform:translateY(20px); transition:.25s; z-index:4000; box-shadow:0 2px 12px rgba(0,0,0,.5)}
-    .toast.show{opacity:1; transform:translateY(0)}
-
-    .charts{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; margin:20px 0}
-    canvas{background:var(--card); border-radius:12px; padding:10px}
-  </style>
-</head>
-<body>
-<div class="container">
-  <header>
-    <h1>TOK4 PLUG</h1>
-    <div class="top-actions">
-      <input id="search" class="input" placeholder="Pesquisar…" style="min-width:200px">
-      <select id="filter-health" class="input">
-        <option value="">Saúde: todos</option><option value="ok">OK</option><option value="fail">Falha</option>
-      </select>
-      <select id="filter-status" class="input">
-        <option value="">Status: todos</option><option value="ativo">Ativo</option><option value="reserva">Reserva</option>
-      </select>
-      <button class="ghost" id="btn-refresh">🔄 Atualizar</button>
-    </div>
-  </header>
-
-  <!-- Estatísticas -->
-  <div id="stats" class="stats">
-    <div class="stat"><div class="label">Ativos</div><div id="count-ativos" class="value">0</div></div>
-    <div class="stat"><div class="label">Reservas</div><div id="count-reserva" class="value">0</div></div>
-    <div class="stat"><div class="label">Checagens</div><div id="checks-total" class="value">0</div></div>
-    <div class="stat danger"><div class="label">Falhas</div><div id="failures-total" class="value">0</div></div>
-    <div class="stat ok"><div class="label">Trocas</div><div id="switches-total" class="value">0</div></div>
-    <div class="stat"><div class="label">Última verificação</div><div id="last-action" class="value">—</div></div>
-  </div>
-
-  <!-- Gráficos -->
-  <div class="charts">
-    <canvas id="chartChecks"></canvas>
-    <canvas id="chartFailures"></canvas>
-    <canvas id="chartSwitches"></canvas>
-  </div>
-
-  <!-- Formulário -->
-  <div class="panel">
-    <h3>Adicionar novo bot</h3>
-    <div class="form-add">
-      <input id="new-name" class="input" placeholder="Nome do bot">
-      <input id="new-url" class="input" placeholder="URL de redirecionamento">
-      <input id="new-token" class="input" placeholder="Token do bot">
-      <button class="primary" onclick="addBot()">➕ Adicionar</button>
-    </div>
-  </div>
-
-  <!-- Painel bots -->
-  <div class="panel">
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th><th>Nome</th><th>Status</th><th>Saúde</th>
-          <th>Token</th><th>Webhook</th><th>URL</th><th>Probe</th>
-          <th>Checks</th><th>Último OK</th><th>Ações</th>
-        </tr>
-      </thead>
-      <tbody id="bots-tbody"></tbody>
-    </table>
-    <div class="logs" id="logs"></div>
-  </div>
-</div>
-
-<!-- Drawer -->
-<div class="drawer" id="drawer">
-  <h2 id="drawer-title">Editar Bot</h2>
-  <div id="drawer-content"></div>
-</div>
-
-<div id="toasts"></div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-  const qs=s=>document.querySelector(s);
-  const esc=s=>s?s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])):"";
-  const formatDt=s=>s?new Date(s).toLocaleString():"—";
-  const toast=msg=>{const el=document.createElement('div');el.className='toast';el.textContent=msg;
-    document.body.appendChild(el);requestAnimationFrame(()=>el.classList.add('show'));
-    setTimeout(()=>{el.classList.remove('show');setTimeout(()=>el.remove(),200)},3500)};
-  let DATA={bots:[],logs:[],metrics:{},last_action:null};
-
-  // Charts
-  let chartChecks,chartFailures,chartSwitches;
-  function initCharts(){
-    chartChecks=new Chart(qs('#chartChecks'),{type:'line',data:{labels:[],datasets:[{label:'Checagens',data:[],borderColor:'#38bdf8',fill:false}]},options:{responsive:true}});
-    chartFailures=new Chart(qs('#chartFailures'),{type:'line',data:{labels:[],datasets:[{label:'Falhas',data:[],borderColor:'#ff4d6d',fill:false}]},options:{responsive:true}});
-    chartSwitches=new Chart(qs('#chartSwitches'),{type:'line',data:{labels:[],datasets:[{label:'Trocas',data:[],borderColor:'#22c55e',fill:false}]},options:{responsive:true}});
-  }
-
-  async function fetchData(){
-    const r=await fetch('/api/bots',{cache:'no-store'});if(!r.ok){toast('Erro na API');return}
-    DATA=await r.json();renderTable();updateCharts();
-  }
-
-  function updateCharts(){
-    const t=new Date().toLocaleTimeString();
-    const m=DATA.metrics||{};
-    chartChecks.data.labels.push(t);chartChecks.data.datasets[0].data.push(m.checks_total||0);
-    chartFailures.data.labels.push(t);chartFailures.data.datasets[0].data.push(m.failures_total||0);
-    chartSwitches.data.labels.push(t);chartSwitches.data.datasets[0].data.push(m.switches_total||0);
-    chartChecks.update();chartFailures.update();chartSwitches.update();
-    qs('#checks-total').textContent=m.checks_total||0;
-    qs('#failures-total').textContent=m.failures_total||0;
-    qs('#switches-total').textContent=m.switches_total||0;
-    if(DATA.last_action)qs('#last-action').textContent=new Date(DATA.last_action*1000).toLocaleString();
-    let a=0,r=0;(DATA.bots||[]).forEach(b=>b.status==='ativo'?a++:r++);qs('#count-ativos').textContent=a;qs('#count-reserva').textContent=r;
-  }
-
-  function renderTable(){
-    const tbody=qs('#bots-tbody');tbody.innerHTML='';
-    (DATA.bots||[]).forEach(b=>{
-      const d=b._diag||{},ok=(typeof d.decision_ok==='boolean')?d.decision_ok:((b.failures||0)===0);
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td>${b.id}</td>
-        <td><a href="#" onclick="editBot(${b.id});return false;">${esc(b.name||'')}</a></td>
-        <td><span class="pill ${b.status==='ativo'?'activo':'reserva'}">${b.status}</span></td>
-        <td>${ok?'✅':'❌'}</td>
-        <td>${d.token_ok===false?'<span class="chip fail">token</span>':'<span class="chip ok">token</span>'}</td>
-        <td>${d.webhook_ok===false?'<span class="chip fail">webhook</span>':'<span class="chip ok">webhook</span>'}</td>
-        <td>${d.url_ok===false?'<span class="chip fail">url</span>':'<span class="chip ok">url</span>'}</td>
-        <td>${d.probe_ok===false?'<span class="chip fail">probe</span>':'<span class="chip ok">probe</span>'}</td>
-        <td>${b.failures||0}</td>
-        <td>${formatDt(b.last_ok)}</td>
-        <td>
-          <button class="ghost tiny" onclick="forceSwap(${b.id})">🔁</button>
-          <button class="ghost tiny" onclick="editBot(${b.id})">✏️</button>
-          <button class="ghost tiny" onclick="del(${b.id})">🗑</button>
-        </td>`;
-      tbody.appendChild(tr)
-    })
-    renderLogs(DATA.logs||[]);
-  }
-
-  function renderLogs(logs){const box=qs('#logs');box.innerHTML='';logs.forEach(l=>{let cls='';if(l.includes('⚠️'))cls='warn';if(l.includes('✅'))cls='ok';if(l.includes('❌'))cls='error';
-    const div=document.createElement('div');div.className=cls;div.textContent=l;box.appendChild(div)});box.scrollTop=box.scrollHeight}
-
-  async function addBot(){
-    const name=qs('#new-name').value.trim(),
-          url=qs('#new-url').value.trim(),
-          token=qs('#new-token').value.trim();
-    if(!name||!url||!token){toast('Preencha todos os campos!');return}
-    await fetch('/api/bots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,url,token})});
-    toast('✅ Bot adicionado');fetchData();
-  }
-
-  async function editBot(id){
-    const b=(DATA.bots||[]).find(x=>x.id===id);if(!b)return;
-    qs('#drawer').classList.add('open');
-    qs('#drawer-title').textContent=`Editar Bot (#${b.id})`;
-    qs('#drawer-content').innerHTML=`
-      <label>Nome:<br><input id="edit-name" class="input" value="${esc(b.name||'')}"></label><br><br>
-      <label>URL:<br><input id="edit-url" class="input" value="${esc(b.redirect_url||'')}"></label><br><br>
-      <label>Token:<br><input id="edit-token" class="input" value="${esc(b.token||'')}"></label><br><br>
-      <button class="primary" onclick="saveEdit(${b.id})">💾 Salvar</button>`;
-  }
-
-  async function saveEdit(id){
-    const name=qs('#edit-name').value,
-          url=qs('#edit-url').value,
-          token=qs('#edit-token').value;
-    await fetch('/api/bots/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,url,token})});
-    toast('✏️ Bot atualizado');qs('#drawer').classList.remove('open');fetchData();
-  }
-
-  async function del(id){if(!confirm('Excluir bot?'))return;
-   Aqui está a **Dashboard completa**, já com todos os botões e ações sincronizados com o banco via `app.py`.  
-
-Implementei:  
-- **Adicionar bot** → via `POST /api/bots`.  
-- **Editar bot** → via `PUT /api/bots/<id>`.  
-- **Excluir bot** → via `DELETE /api/bots/<id>`.  
-- **Forçar swap** → via `POST /api/bots/<id>/force_swap`.  
-- **Logs, métricas e gráficos** já atualizam em tempo real, alinhados com os dados expostos na API.  
-- **Drawer lateral** agora salva direto no banco.  
-
----
-
-```html
-<!doctype html>
-<html lang="pt-br">
-<head>
-  <meta charset="utf-8">
-  <title>Dashboard - TOK4 PLUG</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>
-    :root{
-      --bg:#0b0312; --panel:#181028; --card:#221533;
-      --accent:#7b2cff; --accent-2:#9b55ff; --muted:#9aa0a6;
-      --ok:#22c55e; --warn:#ffb020; --danger:#ff4d6d; --info:#38bdf8;
-      --chip-bg:#140c22; --chip-bd:#2a1a3a; --toast-bg:#2a1a3a;
-      font-family: Inter, system-ui, -apple-system,"Segoe UI", Roboto, Arial;
-    }
-    *{box-sizing:border-box}
-    body{margin:0; background:var(--bg); color:#fff; padding:20px}
-    .container{max-width:1700px; margin:0 auto}
     header{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:20px; flex-wrap:wrap}
     h1{margin:0; font-size:44px; font-weight:900;
       background:linear-gradient(90deg,var(--accent),var(--accent-2));
@@ -340,7 +91,7 @@ Implementei:
     <h3>Adicionar novo bot</h3>
     <div class="form-add">
       <input id="new-name" class="input" placeholder="Nome do bot">
-      <input id="new-url" class="input" placeholder="URL de redirecionamento">
+      <input id="new-redirect-url" class="input" placeholder="URL de redirecionamento">
       <input id="new-token" class="input" placeholder="Token do bot">
       <button class="primary" onclick="addBot()">➕ Adicionar</button>
     </div>
@@ -352,7 +103,7 @@ Implementei:
       <thead>
         <tr>
           <th>ID</th><th>Nome</th><th>Status</th><th>Saúde</th>
-          <th>Token</th><th>URL</th><th>Checks</th><th>Último OK</th><th>Ações</th>
+          <th>Token</th><th>Redirect URL</th><th>Falhas</th><th>Último OK</th><th>Ações</th>
         </tr>
       </thead>
       <tbody id="bots-tbody"></tbody>
@@ -434,10 +185,10 @@ Implementei:
 
   async function addBot(){
     const name=qs('#new-name').value.trim(),
-          url=qs('#new-url').value.trim(),
+          redirect_url=qs('#new-redirect-url').value.trim(),
           token=qs('#new-token').value.trim();
-    if(!name||!url||!token){toast('Preencha todos os campos!');return}
-    await fetch('/api/bots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,url,token})});
+    if(!name||!redirect_url||!token){toast('Preencha todos os campos!');return}
+    await fetch('/api/bots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,redirect_url,token})});
     toast('✅ Bot adicionado');fetchData();
   }
 
@@ -447,16 +198,16 @@ Implementei:
     qs('#drawer-title').textContent=`Editar Bot (#${b.id})`;
     qs('#drawer-content').innerHTML=`
       <label>Nome:<br><input id="edit-name" class="input" value="${esc(b.name||'')}"></label><br><br>
-      <label>URL:<br><input id="edit-url" class="input" value="${esc(b.redirect_url||'')}"></label><br><br>
+      <label>Redirect URL:<br><input id="edit-redirect-url" class="input" value="${esc(b.redirect_url||'')}"></label><br><br>
       <label>Token:<br><input id="edit-token" class="input" value="${esc(b.token||'')}"></label><br><br>
       <button class="primary" onclick="saveEdit(${b.id})">💾 Salvar</button>`;
   }
 
   async function saveEdit(id){
     const name=qs('#edit-name').value,
-          url=qs('#edit-url').value,
+          redirect_url=qs('#edit-redirect-url').value,
           token=qs('#edit-token').value;
-    await fetch('/api/bots/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,url,token})});
+    await fetch('/api/bots/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,redirect_url,token})});
     toast('✏️ Bot atualizado');qs('#drawer').classList.remove('open');fetchData();
   }
 
