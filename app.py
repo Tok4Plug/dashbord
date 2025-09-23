@@ -147,7 +147,6 @@ def send_whatsapp(title: str, details: str):
         add_log(f"❌ Erro ao enviar WhatsApp: {e}")
 
 def _rollback_if_failed_tx(e: Exception):
-    # Evita travar a sessão quando uma query anterior abortou a transação
     try:
         if "current transaction is aborted" in str(e).lower():
             db.session.rollback()
@@ -170,172 +169,11 @@ def _get_payload():
     """
     data = request.get_json(silent=True) or {}
     if not data:
-        # fallback para form-data
         data = request.form.to_dict() or {}
-    # normaliza chaves
     for k in list(data.keys()):
         if isinstance(data[k], str):
             data[k] = data[k].strip()
     return data
-
-# ================================
-# Verificação confiável (com WebhookInfo inteligente)
-# ================================
-def _run_checks_once(bot):
-    token_ok, token_reason, username = check_token(bot.token or "")
-    url_ok, url_reason = check_link(bot.redirect_url or "")
-    probe_ok, probe_reason = check_probe(bot.token, MONITOR_CHAT_ID)
-    webhook_ok, webhook_reason, webhook_info = check_webhook(bot.token or "")
-
-    # Critério principal: token e probe
-    decision_ok = bool(token_ok and (probe_ok is True or probe_ok is None))
-
-    # Se webhook falhou mas bot responde, apenas alerta
-    if decision_ok and not webhook_ok:
-        add_log(f"⚠️ {bot.name}: webhook falhou ({webhook_reason}), mas bot responde normalmente.")
-
-    diag = {
-        "token_ok": token_ok,
-        "url_ok": url_ok,
-        "probe_ok": probe_ok if probe_ok in (True, False) else None,
-        "webhook_ok": webhook_ok,
-        "decision_ok": decision_ok,
-        "reasons": {
-            "token": token_reason,
-            "url": url_reason,
-            "probe": probe_reason,
-            "webhook": webhook_reason
-        },
-        "username": username,
-        "webhook_info": webhook_info
-    }
-    return diag, decision_ok
-
-def diagnosticar_bot(bot):
-    diag1, ok1 = _run_checks_once(bot)
-    if ok1:
-        return diag1
-
-    delay = DOUBLECHECK_DELAY_SECONDS + random.uniform(0.0, 1.5)
-    add_log(f"⏳ {bot.name}: primeira checagem falhou, aguardando {delay:.1f}s...")
-    time.sleep(delay)
-
-    diag2, ok2 = _run_checks_once(bot)
-    if ok2:
-        add_log(f"🔁 {bot.name}: recuperação confirmada na segunda checagem.")
-        return diag2
-
-    last_diag = diag2
-    for _ in range(max(0, RETRY_CHECKS_PER_PASS - 1)):
-        time.sleep(1.0 + random.uniform(0.0, 1.0))
-        d, ok = _run_checks_once(bot)
-        last_diag = d
-        if ok:
-            add_log(f"🔁 {bot.name}: recuperação confirmada em tentativa extra.")
-            return d
-
-    last_diag["decision_ok"] = False
-    return last_diag
-
-# ================================
-# Loop de monitoramento
-# ================================
-@contextmanager
-def _flask_app_context():
-    with app.app_context():
-        yield
-
-def monitor_loop(interval: int = MONITOR_INTERVAL):
-    started_at = datetime.utcnow()
-    with _flask_app_context():
-        add_log("🔄 Iniciando varredura de bots...")
-        ativos, reserva = get_bots_from_db()
-        add_log(f"✅ Monitor ativo | Ativos: {len(ativos)} | Reserva: {len(reserva)}")
-        send_whatsapp("🚀 Monitor Iniciado", f"Ativos: {len(ativos)} | Reservas: {len(reserva)}")
-
-        while True:
-            cycle_started = datetime.utcnow()
-            in_grace = (cycle_started - started_at).total_seconds() < STARTUP_GRACE_SECONDS
-            ativos, reserva = get_bots_from_db()
-
-            for bot in ativos:
-                add_log(f"🔎 Checando {bot.name} → {bot.redirect_url}")
-                metrics["checks_total"] += 1
-                metrics["last_check_ts"] = int(time.time())
-
-                diag = diagnosticar_bot(bot)
-                with _state_lock:
-                    diag_cache[bot.id] = {"when": int(time.time()), "diag": diag}
-
-                try:
-                    bot.last_token_ok = diag.get("token_ok")
-                    bot.last_url_ok = diag.get("url_ok")
-                    bot.last_webhook_ok = diag.get("webhook_ok")
-                    bot.last_reason = json.dumps(diag.get("reasons", {}), ensure_ascii=False)
-                except Exception:
-                    pass
-
-                add_log(
-                    f"📋 Diagnóstico {bot.name}: "
-                    f"token_ok={diag['token_ok']}, url_ok={diag['url_ok']}, "
-                    f"probe_ok={diag['probe_ok']}, webhook_ok={diag['webhook_ok']} "
-                    f"| R: {diag['reasons']} | webhook_info={diag['webhook_info']}"
-                )
-
-                if diag["decision_ok"]:
-                    bot.reset_failures()
-                    bot.last_ok = datetime.utcnow()
-                    safe_commit()
-                    add_log(f"✅ {bot.name}: OK")
-                    with _state_lock:
-                        alert_state[bot.id] = {"last_fail_count": 0, "last_alert_ts": None}
-                    continue
-
-                bot.increment_failure()
-                metrics["failures_total"] += 1
-                fail_cnt = bot.failures or 0
-                add_log(f"⚠️ {bot.name}: queda confirmada ({fail_cnt}/{FAIL_THRESHOLD})")
-
-                should_alert = False
-                with _state_lock:
-                    st = alert_state.get(bot.id) or {}
-                    last_fail_seen = st.get("last_fail_count", 0)
-                    if fail_cnt != last_fail_seen or fail_cnt == FAIL_THRESHOLD:
-                        should_alert = True
-                    alert_state[bot.id] = {"last_fail_count": fail_cnt, "last_alert_ts": int(time.time())}
-
-                if should_alert:
-                    send_whatsapp(
-                        "⚠️ Bot com problema",
-                        f"Nome: {bot.name}\nURL: {bot.redirect_url}\nFalhas: {fail_cnt}/{FAIL_THRESHOLD}\n"
-                        f"🔑 Token: {diag['reasons'].get('token')}\n🌍 URL: {diag['reasons'].get('url')}\n"
-                        f"📡 Probe: {diag['reasons'].get('probe')}\n🔗 Webhook: {diag['reasons'].get('webhook')}"
-                    )
-
-                if in_grace:
-                    safe_commit()
-                    continue
-
-                if fail_cnt >= FAIL_THRESHOLD:
-                    bot.mark_reserve()
-                    safe_commit()
-                    add_log(f"🔁 {bot.name} movido para 'reserva'.")
-                    _, reserva_atual = get_bots_from_db()
-                    if reserva_atual:
-                        novo = reserva_atual[0]
-                        novo.mark_active()
-                        if safe_commit():
-                            metrics["switches_total"] += 1
-                            send_whatsapp(
-                                "🔄 Substituição Automática",
-                                f"❌ {bot.name} caiu\n➡️ ✅ {novo.name} ativo\nNovo URL: {novo.redirect_url}"
-                            )
-                            add_log(f"✅ Troca concluída: {bot.name} ➜ {novo.name}")
-                    else:
-                        send_whatsapp("❌ Falha Crítica", "Não há mais bots na reserva!")
-
-            elapsed = (datetime.utcnow() - cycle_started).total_seconds()
-            time.sleep(max(1.0, interval - elapsed))
 
 # ================================
 # Rotas Dashboard/API (CRUD completo)
@@ -369,17 +207,13 @@ def api_bots():
 def create_bot():
     try:
         data = _get_payload()
-        # Debug opcional:
-        # add_log(f"📥 Recebido no POST /api/bots: {data}")
+        add_log(f"📥 Recebido no POST /api/bots: {data}")
 
-        # Validações mínimas
         name = data.get("name")
         token = data.get("token")
-        redirect_url = data.get("redirect_url")
+        redirect_url = data.get("redirect_url") or f"https://t.me/{name}"  # fallback
         status = data.get("status", "ativo") or "ativo"
 
-        if not redirect_url:
-            return jsonify({"error": "redirect_url é obrigatório"}), 400
         if not name or not token:
             return jsonify({"error": "name e token são obrigatórios"}), 400
 
@@ -408,7 +242,7 @@ def update_bot(bot_id):
             return jsonify({"error": "Bot não encontrado"}), 404
 
         data = _get_payload()
-        # add_log(f"📥 Recebido no PUT /api/bots/{bot_id}: {data}")
+        add_log(f"📥 Recebido no PUT /api/bots/{bot_id}: {data}")
 
         if "redirect_url" in data and not data.get("redirect_url"):
             return jsonify({"error": "redirect_url não pode ser vazio"}), 400
@@ -462,7 +296,6 @@ def _apply_bootstrap_patches():
     with app.app_context():
         try:
             with db.engine.begin() as conn:
-                # Colunas base usadas no monitor e dashboard
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS redirect_url TEXT"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_ok TIMESTAMP NULL"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS failures INTEGER DEFAULT 0"))
@@ -470,49 +303,17 @@ def _apply_bootstrap_patches():
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_token_ok BOOLEAN"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_url_ok BOOLEAN"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_ok BOOLEAN"))
-                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_token_http INTEGER"))
-                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_url_http INTEGER"))
-                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_url TEXT"))
-                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_error TEXT"))
-                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_error_at TIMESTAMP"))
-                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS pending_update_count INTEGER"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS created_at TIMESTAMP"))
-
-                # Índices úteis alinhados ao models.py (criados se não existirem)
-                conn.execute(text("""
-                    DO $$
-                    BEGIN
-                        IF NOT EXISTS (
-                            SELECT 1 FROM pg_class c
-                            JOIN pg_namespace n ON n.oid = c.relnamespace
-                            WHERE c.relkind = 'i' AND c.relname = 'idx_status_failures'
-                        ) THEN
-                            CREATE INDEX idx_status_failures ON bots (status, failures);
-                        END IF;
-
-                        IF NOT EXISTS (
-                            SELECT 1 FROM pg_class c
-                            JOIN pg_namespace n ON n.oid = c.relnamespace
-                            WHERE c.relkind = 'i' AND c.relname = 'idx_name_status'
-                        ) THEN
-                            CREATE INDEX idx_name_status ON bots (name, status);
-                        END IF;
-
-                        IF NOT EXISTS (
-                            SELECT 1 FROM pg_class c
-                            JOIN pg_namespace n ON n.oid = c.relnamespace
-                            WHERE c.relkind = 'i' AND c.relname = 'idx_failures_updated'
-                        ) THEN
-                            CREATE INDEX idx_failures_updated ON bots (failures, updated_at);
-                        END IF;
-                    END$$;
-                """))
-
             add_log("✅ Patch no schema aplicado")
         except Exception as e:
             add_log(f"⚠️ Patch falhou: {e}")
 
+_apply_bootstrap_patches()
+
+# ================================
+# Monitor
+# ================================
 _monitor_thread = None
 _filelock = None
 
@@ -522,11 +323,7 @@ def _try_acquire_file_lock():
         global _filelock
         lock_path = "/tmp/tok4_monitor.lock"
         _filelock = open(lock_path, "w")
-        try:
-            fcntl.flock(_filelock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as e:
-            add_log(f"🔁 Monitor já em execução em outro worker: {e}")
-            return False
+        fcntl.flock(_filelock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         _filelock.write(f"pid={os.getpid()} ts={time.time()}\n")
         _filelock.flush()
         add_log("🔐 File lock adquirido: monitor exclusivo neste container.")
@@ -548,7 +345,6 @@ def _start_monitor_background():
     _monitor_thread.start()
     add_log("🧵 Thread de monitoramento iniciada.")
 
-_apply_bootstrap_patches()
 _start_monitor_background()
 
 # ================================
