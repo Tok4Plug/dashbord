@@ -11,8 +11,8 @@ from contextlib import contextmanager
 from datetime import datetime
 
 import requests
-from flask import Flask, render_template, jsonify, request
-from sqlalchemy.exc import SQLAlchemyError
+from flask import Flask, render_template, jsonify, request, make_response
+from sqlalchemy.exc import SQLAlchemyError, DBAPIError
 from sqlalchemy import text
 from twilio.rest import Client
 
@@ -51,6 +51,8 @@ RETRY_CHECKS_PER_PASS = int(os.getenv("RETRY_CHECKS_PER_PASS", "1"))
 HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "8.0"))
 MONITOR_ENABLED = os.getenv("MONITOR_ENABLED", "true").lower() in ("1", "true", "yes")
 
+DASHBOARD_ALLOW_ORIGIN = os.getenv("DASHBOARD_ALLOW_ORIGIN", "*")  # CORS simples
+
 # ================================
 # Setup Flask
 # ================================
@@ -81,6 +83,29 @@ alert_state = {}
 _state_lock = threading.Lock()
 
 # ================================
+# CORS básico (sem dependências)
+# ================================
+@app.after_request
+def add_cors_headers(resp):
+    try:
+        resp.headers["Access-Control-Allow-Origin"] = DASHBOARD_ALLOW_ORIGIN
+        resp.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        resp.headers["Access-Control-Allow-Credentials"] = "true"
+    except Exception:
+        pass
+    return resp
+
+@app.route("/api/<path:_>", methods=["OPTIONS"])
+def cors_preflight(_):
+    resp = make_response("", 204)
+    resp.headers["Access-Control-Allow-Origin"] = DASHBOARD_ALLOW_ORIGIN
+    resp.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    resp.headers["Access-Control-Allow-Credentials"] = "true"
+    return resp
+
+# ================================
 # Funções auxiliares
 # ================================
 def add_log(msg: str):
@@ -96,7 +121,7 @@ def safe_commit():
     try:
         db.session.commit()
         return True
-    except SQLAlchemyError as e:
+    except (SQLAlchemyError, DBAPIError) as e:
         db.session.rollback()
         add_log(f"❌ Erro no commit: {e}")
         return False
@@ -121,14 +146,37 @@ def send_whatsapp(title: str, details: str):
     except Exception as e:
         add_log(f"❌ Erro ao enviar WhatsApp: {e}")
 
+def _rollback_if_failed_tx(e: Exception):
+    # Evita travar a sessão quando uma query anterior abortou a transação
+    try:
+        if "current transaction is aborted" in str(e).lower():
+            db.session.rollback()
+    except Exception:
+        pass
+
 def get_bots_from_db():
     try:
         ativos = Bot.query.filter_by(status="ativo").order_by(Bot.id.asc()).all()
         reserva = Bot.query.filter_by(status="reserva").order_by(Bot.id.asc()).all()
         return ativos, reserva
-    except SQLAlchemyError as e:
+    except (SQLAlchemyError, DBAPIError) as e:
+        _rollback_if_failed_tx(e)
         add_log(f"❌ Erro ao consultar banco: {e}")
         return [], []
+
+def _get_payload():
+    """
+    Lê o payload aceitando JSON e/ou form-data.
+    """
+    data = request.get_json(silent=True) or {}
+    if not data:
+        # fallback para form-data
+        data = request.form.to_dict() or {}
+    # normaliza chaves
+    for k in list(data.keys()):
+        if isinstance(data[k], str):
+            data[k] = data[k].strip()
+    return data
 
 # ================================
 # Verificação confiável (com WebhookInfo inteligente)
@@ -139,8 +187,10 @@ def _run_checks_once(bot):
     probe_ok, probe_reason = check_probe(bot.token, MONITOR_CHAT_ID)
     webhook_ok, webhook_reason, webhook_info = check_webhook(bot.token or "")
 
+    # Critério principal: token e probe
     decision_ok = bool(token_ok and (probe_ok is True or probe_ok is None))
 
+    # Se webhook falhou mas bot responde, apenas alerta
     if decision_ok and not webhook_ok:
         add_log(f"⚠️ {bot.name}: webhook falhou ({webhook_reason}), mas bot responde normalmente.")
 
@@ -176,7 +226,7 @@ def diagnosticar_bot(bot):
         return diag2
 
     last_diag = diag2
-    for n in range(max(0, RETRY_CHECKS_PER_PASS - 1)):
+    for _ in range(max(0, RETRY_CHECKS_PER_PASS - 1)):
         time.sleep(1.0 + random.uniform(0.0, 1.0))
         d, ok = _run_checks_once(bot)
         last_diag = d
@@ -225,10 +275,12 @@ def monitor_loop(interval: int = MONITOR_INTERVAL):
                 except Exception:
                     pass
 
-                add_log(f"📋 Diagnóstico {bot.name}: "
-                        f"token_ok={diag['token_ok']}, url_ok={diag['url_ok']}, "
-                        f"probe_ok={diag['probe_ok']}, webhook_ok={diag['webhook_ok']} "
-                        f"| R: {diag['reasons']} | webhook_info={diag['webhook_info']}")
+                add_log(
+                    f"📋 Diagnóstico {bot.name}: "
+                    f"token_ok={diag['token_ok']}, url_ok={diag['url_ok']}, "
+                    f"probe_ok={diag['probe_ok']}, webhook_ok={diag['webhook_ok']} "
+                    f"| R: {diag['reasons']} | webhook_info={diag['webhook_info']}"
+                )
 
                 if diag["decision_ok"]:
                     bot.reset_failures()
@@ -253,7 +305,8 @@ def monitor_loop(interval: int = MONITOR_INTERVAL):
                     alert_state[bot.id] = {"last_fail_count": fail_cnt, "last_alert_ts": int(time.time())}
 
                 if should_alert:
-                    send_whatsapp("⚠️ Bot com problema",
+                    send_whatsapp(
+                        "⚠️ Bot com problema",
                         f"Nome: {bot.name}\nURL: {bot.redirect_url}\nFalhas: {fail_cnt}/{FAIL_THRESHOLD}\n"
                         f"🔑 Token: {diag['reasons'].get('token')}\n🌍 URL: {diag['reasons'].get('url')}\n"
                         f"📡 Probe: {diag['reasons'].get('probe')}\n🔗 Webhook: {diag['reasons'].get('webhook')}"
@@ -273,7 +326,8 @@ def monitor_loop(interval: int = MONITOR_INTERVAL):
                         novo.mark_active()
                         if safe_commit():
                             metrics["switches_total"] += 1
-                            send_whatsapp("🔄 Substituição Automática",
+                            send_whatsapp(
+                                "🔄 Substituição Automática",
                                 f"❌ {bot.name} caiu\n➡️ ✅ {novo.name} ativo\nNovo URL: {novo.redirect_url}"
                             )
                             add_log(f"✅ Troca concluída: {bot.name} ➜ {novo.name}")
@@ -307,26 +361,38 @@ def api_bots():
             payload.append(d)
         return jsonify({"bots": payload, "logs": monitor_logs, "metrics": metrics})
     except Exception as e:
+        _rollback_if_failed_tx(e)
         add_log(f"❌ /api/bots erro: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/bots", methods=["POST"])
 def create_bot():
     try:
-        data = request.json or {}
-        if not data.get("redirect_url"):
+        data = _get_payload()
+        # Debug opcional:
+        # add_log(f"📥 Recebido no POST /api/bots: {data}")
+
+        # Validações mínimas
+        name = data.get("name")
+        token = data.get("token")
+        redirect_url = data.get("redirect_url")
+        status = data.get("status", "ativo") or "ativo"
+
+        if not redirect_url:
             return jsonify({"error": "redirect_url é obrigatório"}), 400
-        if not data.get("name") or not data.get("token"):
+        if not name or not token:
             return jsonify({"error": "name e token são obrigatórios"}), 400
 
         new_bot = Bot(
-            name=data.get("name"),
-            token=data.get("token"),
-            redirect_url=data.get("redirect_url"),
-            status=data.get("status", "ativo")
+            name=name,
+            token=token,
+            redirect_url=redirect_url,
+            status=status
         )
         db.session.add(new_bot)
-        safe_commit()
+        if not safe_commit():
+            return jsonify({"error": "Falha ao salvar. Verifique os logs."}), 500
+
         add_log(f"➕ Bot {new_bot.name} criado.")
         send_whatsapp("➕ Novo Bot", f"Nome: {new_bot.name}\nURL: {new_bot.redirect_url}")
         return jsonify(new_bot.to_dict()), 201
@@ -340,7 +406,10 @@ def update_bot(bot_id):
         bot = Bot.query.get(bot_id)
         if not bot:
             return jsonify({"error": "Bot não encontrado"}), 404
-        data = request.json or {}
+
+        data = _get_payload()
+        # add_log(f"📥 Recebido no PUT /api/bots/{bot_id}: {data}")
+
         if "redirect_url" in data and not data.get("redirect_url"):
             return jsonify({"error": "redirect_url não pode ser vazio"}), 400
 
@@ -348,7 +417,9 @@ def update_bot(bot_id):
         bot.token = data.get("token", bot.token)
         bot.redirect_url = data.get("redirect_url", bot.redirect_url)
         bot.status = data.get("status", bot.status)
-        safe_commit()
+        if not safe_commit():
+            return jsonify({"error": "Falha ao salvar. Verifique os logs."}), 500
+
         add_log(f"✏️ Bot {bot.name} atualizado.")
         send_whatsapp("✏️ Bot Atualizado", f"Nome: {bot.name}\nURL: {bot.redirect_url}")
         return jsonify(bot.to_dict())
@@ -363,7 +434,9 @@ def delete_bot(bot_id):
         if not bot:
             return jsonify({"error": "Bot não encontrado"}), 404
         db.session.delete(bot)
-        safe_commit()
+        if not safe_commit():
+            return jsonify({"error": "Falha ao excluir. Verifique os logs."}), 500
+
         add_log(f"🗑️ Bot {bot.name} excluído.")
         send_whatsapp("🗑️ Bot Excluído", f"Nome: {bot.name}")
         return jsonify({"ok": True})
@@ -389,14 +462,53 @@ def _apply_bootstrap_patches():
     with app.app_context():
         try:
             with db.engine.begin() as conn:
+                # Colunas base usadas no monitor e dashboard
+                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS redirect_url TEXT"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_ok TIMESTAMP NULL"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS failures INTEGER DEFAULT 0"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_reason TEXT"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_token_ok BOOLEAN"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_url_ok BOOLEAN"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_ok BOOLEAN"))
+                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_token_http INTEGER"))
+                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_url_http INTEGER"))
+                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_url TEXT"))
+                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_error TEXT"))
+                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_error_at TIMESTAMP"))
+                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS pending_update_count INTEGER"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS created_at TIMESTAMP"))
+
+                # Índices úteis alinhados ao models.py (criados se não existirem)
+                conn.execute(text("""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_class c
+                            JOIN pg_namespace n ON n.oid = c.relnamespace
+                            WHERE c.relkind = 'i' AND c.relname = 'idx_status_failures'
+                        ) THEN
+                            CREATE INDEX idx_status_failures ON bots (status, failures);
+                        END IF;
+
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_class c
+                            JOIN pg_namespace n ON n.oid = c.relnamespace
+                            WHERE c.relkind = 'i' AND c.relname = 'idx_name_status'
+                        ) THEN
+                            CREATE INDEX idx_name_status ON bots (name, status);
+                        END IF;
+
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_class c
+                            JOIN pg_namespace n ON n.oid = c.relnamespace
+                            WHERE c.relkind = 'i' AND c.relname = 'idx_failures_updated'
+                        ) THEN
+                            CREATE INDEX idx_failures_updated ON bots (failures, updated_at);
+                        END IF;
+                    END$$;
+                """))
+
             add_log("✅ Patch no schema aplicado")
         except Exception as e:
             add_log(f"⚠️ Patch falhou: {e}")
@@ -410,7 +522,11 @@ def _try_acquire_file_lock():
         global _filelock
         lock_path = "/tmp/tok4_monitor.lock"
         _filelock = open(lock_path, "w")
-        fcntl.flock(_filelock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.flock(_filelock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as e:
+            add_log(f"🔁 Monitor já em execução em outro worker: {e}")
+            return False
         _filelock.write(f"pid={os.getpid()} ts={time.time()}\n")
         _filelock.flush()
         add_log("🔐 File lock adquirido: monitor exclusivo neste container.")
