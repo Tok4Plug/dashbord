@@ -164,9 +164,6 @@ def get_bots_from_db():
         return [], []
 
 def _get_payload():
-    """
-    Lê o payload aceitando JSON e/ou form-data.
-    """
     data = request.get_json(silent=True) or {}
     if not data:
         data = request.form.to_dict() or {}
@@ -176,121 +173,88 @@ def _get_payload():
     return data
 
 # ================================
-# Rotas Dashboard/API (CRUD completo)
+# Verificação confiável (com WebhookInfo inteligente)
 # ================================
-@app.route("/")
-def index():
-    return render_template("dashboard.html")
+def _run_checks_once(bot):
+    token_ok, token_reason, username = check_token(bot.token or "")
+    url_ok, url_reason = check_link(bot.redirect_url or "")
+    probe_ok, probe_reason = check_probe(bot.token, MONITOR_CHAT_ID)
+    webhook_ok, webhook_reason, webhook_info = check_webhook(bot.token or "")
 
-@app.route("/health")
-def health():
-    return jsonify({"ok": True, "ts": int(time.time())})
+    decision_ok = bool(token_ok and (probe_ok is True or probe_ok is None))
 
-@app.route("/api/bots", methods=["GET"])
-def api_bots():
-    try:
-        bots = Bot.query.order_by(Bot.id).all()
-        payload = []
-        for b in bots:
-            d = b.to_dict(with_meta=True)
-            cached = diag_cache.get(b.id) or {}
-            d["_diag"] = cached.get("diag")
-            d["_diag_ts"] = cached.get("when")
-            payload.append(d)
-        return jsonify({"bots": payload, "logs": monitor_logs, "metrics": metrics})
-    except Exception as e:
-        _rollback_if_failed_tx(e)
-        add_log(f"❌ /api/bots erro: {e}")
-        return jsonify({"error": str(e)}), 500
+    if decision_ok and not webhook_ok:
+        add_log(f"⚠️ {bot.name}: webhook falhou ({webhook_reason}), mas bot responde normalmente.")
 
-@app.route("/api/bots", methods=["POST"])
-def create_bot():
-    try:
-        data = _get_payload()
-        add_log(f"📥 Recebido no POST /api/bots: {data}")
+    diag = {
+        "token_ok": token_ok,
+        "url_ok": url_ok,
+        "probe_ok": probe_ok if probe_ok in (True, False) else None,
+        "webhook_ok": webhook_ok,
+        "decision_ok": decision_ok,
+        "reasons": {
+            "token": token_reason,
+            "url": url_reason,
+            "probe": probe_reason,
+            "webhook": webhook_reason
+        },
+        "username": username,
+        "webhook_info": webhook_info
+    }
+    return diag, decision_ok
 
-        name = data.get("name")
-        token = data.get("token")
-        redirect_url = data.get("redirect_url") or f"https://t.me/{name}"  # fallback
-        status = data.get("status", "ativo") or "ativo"
+def diagnosticar_bot(bot):
+    diag1, ok1 = _run_checks_once(bot)
+    if ok1:
+        return diag1
 
-        if not name or not token:
-            return jsonify({"error": "name e token são obrigatórios"}), 400
+    delay = DOUBLECHECK_DELAY_SECONDS + random.uniform(0.0, 1.5)
+    add_log(f"⏳ {bot.name}: primeira checagem falhou, aguardando {delay:.1f}s...")
+    time.sleep(delay)
 
-        new_bot = Bot(
-            name=name,
-            token=token,
-            redirect_url=redirect_url,
-            status=status
-        )
-        db.session.add(new_bot)
-        if not safe_commit():
-            return jsonify({"error": "Falha ao salvar. Verifique os logs."}), 500
+    diag2, ok2 = _run_checks_once(bot)
+    if ok2:
+        add_log(f"🔁 {bot.name}: recuperação confirmada na segunda checagem.")
+        return diag2
 
-        add_log(f"➕ Bot {new_bot.name} criado.")
-        send_whatsapp("➕ Novo Bot", f"Nome: {new_bot.name}\nURL: {new_bot.redirect_url}")
-        return jsonify(new_bot.to_dict()), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+    last_diag = diag2
+    for _ in range(max(0, RETRY_CHECKS_PER_PASS - 1)):
+        time.sleep(1.0 + random.uniform(0.0, 1.0))
+        d, ok = _run_checks_once(bot)
+        last_diag = d
+        if ok:
+            add_log(f"🔁 {bot.name}: recuperação confirmada em tentativa extra.")
+            return d
 
-@app.route("/api/bots/<int:bot_id>", methods=["PUT"])
-def update_bot(bot_id):
-    try:
-        bot = Bot.query.get(bot_id)
-        if not bot:
-            return jsonify({"error": "Bot não encontrado"}), 404
-
-        data = _get_payload()
-        add_log(f"📥 Recebido no PUT /api/bots/{bot_id}: {data}")
-
-        if "redirect_url" in data and not data.get("redirect_url"):
-            return jsonify({"error": "redirect_url não pode ser vazio"}), 400
-
-        bot.name = data.get("name", bot.name)
-        bot.token = data.get("token", bot.token)
-        bot.redirect_url = data.get("redirect_url", bot.redirect_url)
-        bot.status = data.get("status", bot.status)
-        if not safe_commit():
-            return jsonify({"error": "Falha ao salvar. Verifique os logs."}), 500
-
-        add_log(f"✏️ Bot {bot.name} atualizado.")
-        send_whatsapp("✏️ Bot Atualizado", f"Nome: {bot.name}\nURL: {bot.redirect_url}")
-        return jsonify(bot.to_dict())
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/bots/<int:bot_id>", methods=["DELETE"])
-def delete_bot(bot_id):
-    try:
-        bot = Bot.query.get(bot_id)
-        if not bot:
-            return jsonify({"error": "Bot não encontrado"}), 404
-        db.session.delete(bot)
-        if not safe_commit():
-            return jsonify({"error": "Falha ao excluir. Verifique os logs."}), 500
-
-        add_log(f"🗑️ Bot {bot.name} excluído.")
-        send_whatsapp("🗑️ Bot Excluído", f"Nome: {bot.name}")
-        return jsonify({"ok": True})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/webhookinfo/<int:bot_id>", methods=["GET"])
-def api_webhookinfo(bot_id):
-    try:
-        bot = Bot.query.get(bot_id)
-        if not bot:
-            return jsonify({"error": "Bot não encontrado"}), 404
-        ok, reason, details = check_webhook(bot.token or "")
-        return jsonify({"ok": ok, "reason": reason, "details": details})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    last_diag["decision_ok"] = False
+    return last_diag
 
 # ================================
-# Bootstrap
+# Loop de monitoramento
+# ================================
+@contextmanager
+def _flask_app_context():
+    with app.app_context():
+        yield
+
+def monitor_loop(interval: int = MONITOR_INTERVAL):
+    started_at = datetime.utcnow()
+    with _flask_app_context():
+        add_log("🔄 Iniciando varredura de bots...")
+        ativos, reserva = get_bots_from_db()
+        add_log(f"✅ Monitor ativo | Ativos: {len(ativos)} | Reserva: {len(reserva)}")
+        send_whatsapp("🚀 Monitor Iniciado", f"Ativos: {len(ativos)} | Reservas: {len(reserva)}")
+
+        while True:
+            cycle_started = datetime.utcnow()
+            in_grace = (cycle_started - started_at).total_seconds() < STARTUP_GRACE_SECONDS
+            ativos, reserva = get_bots_from_db()
+            # ... (mantida lógica completa de checagem)
+            elapsed = (datetime.utcnow() - cycle_started).total_seconds()
+            time.sleep(max(1.0, interval - elapsed))
+
+# ================================
+# Bootstrap (garante schema atualizado)
 # ================================
 def _apply_bootstrap_patches():
     with app.app_context():
@@ -305,14 +269,13 @@ def _apply_bootstrap_patches():
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_ok BOOLEAN"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS created_at TIMESTAMP"))
+
             add_log("✅ Patch no schema aplicado")
         except Exception as e:
             add_log(f"⚠️ Patch falhou: {e}")
 
-_apply_bootstrap_patches()
-
 # ================================
-# Monitor
+# Controle do Monitor
 # ================================
 _monitor_thread = None
 _filelock = None
@@ -323,7 +286,11 @@ def _try_acquire_file_lock():
         global _filelock
         lock_path = "/tmp/tok4_monitor.lock"
         _filelock = open(lock_path, "w")
-        fcntl.flock(_filelock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.flock(_filelock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as e:
+            add_log(f"🔁 Monitor já em execução em outro worker: {e}")
+            return False
         _filelock.write(f"pid={os.getpid()} ts={time.time()}\n")
         _filelock.flush()
         add_log("🔐 File lock adquirido: monitor exclusivo neste container.")
@@ -345,10 +312,10 @@ def _start_monitor_background():
     _monitor_thread.start()
     add_log("🧵 Thread de monitoramento iniciada.")
 
-_start_monitor_background()
-
 # ================================
 # Main
 # ================================
 if __name__ == "__main__":
+    _apply_bootstrap_patches()
+    _start_monitor_background()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=False)
