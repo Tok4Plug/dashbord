@@ -1,12 +1,17 @@
 # ================================
 # models.py (versão avançada, inteligente e sincronizada com utils.py e app.py)
 # ================================
-from datetime import datetime
+from datetime import datetime, timezone
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Index, UniqueConstraint, func
 
 # Inicializa o SQLAlchemy (injeção feita em app.py)
 db = SQLAlchemy()
+
+
+def now_utc():
+    """Retorna datetime UTC com timezone-aware (corrige erro naive vs aware)."""
+    return datetime.now(timezone.utc)
 
 
 class Bot(db.Model):
@@ -20,10 +25,10 @@ class Bot(db.Model):
     - Informações de webhook
     - Timestamps de criação/atualização
 
-    Este modelo foi projetado para:
-    - Alta performance de consulta (com índices)
+    Projetado para:
+    - Alta performance de consulta (índices e constraints)
     - Serialização compatível com dashboard
-    - Métodos utilitários de estado (ativo/reserva/inativo)
+    - Métodos utilitários (ativo/reserva/inativo)
     - Aplicação de diagnósticos de monitoramento
     """
     __tablename__ = "bots"
@@ -39,7 +44,7 @@ class Bot(db.Model):
 
     # ---------- Monitoramento ----------
     failures = db.Column(db.Integer, default=0, index=True)
-    last_ok = db.Column(db.DateTime, nullable=True, index=True)
+    last_ok = db.Column(db.DateTime(timezone=True), nullable=True, index=True)
     last_reason = db.Column(db.Text, nullable=True)
 
     # Diagnósticos técnicos
@@ -54,12 +59,12 @@ class Bot(db.Model):
     # Webhook details
     last_webhook_url = db.Column(db.Text, nullable=True)
     last_webhook_error = db.Column(db.Text, nullable=True)
-    last_webhook_error_at = db.Column(db.DateTime, nullable=True)
+    last_webhook_error_at = db.Column(db.DateTime(timezone=True), nullable=True)
     pending_update_count = db.Column(db.Integer, nullable=True)
 
     # ---------- Timestamps ----------
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=now_utc, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False, index=True)
 
     # ---------- Constraints & Indexes ----------
     __table_args__ = (
@@ -77,7 +82,7 @@ class Bot(db.Model):
         """Marca como ativo, reseta falhas e atualiza último sucesso."""
         self.status = "ativo"
         self.failures = 0
-        self.last_ok = datetime.utcnow()
+        self.last_ok = now_utc()
         self.touch()
 
     def mark_reserve(self):
@@ -101,20 +106,18 @@ class Bot(db.Model):
     def reset_failures(self):
         """Reseta contador de falhas e atualiza último sucesso."""
         self.failures = 0
-        self.last_ok = datetime.utcnow()
+        self.last_ok = now_utc()
         self.touch()
 
     def touch(self):
         """Atualiza timestamp de atualização."""
-        self.updated_at = datetime.utcnow()
+        self.updated_at = now_utc()
 
     # ====================================================
     # Métodos de Diagnóstico
     # ====================================================
     def apply_diag(self, diag: dict):
-        """
-        Aplica resultados de diagnóstico ao registro.
-        """
+        """Aplica resultados de diagnóstico ao registro."""
         self.last_token_ok = diag.get("token_ok")
         self.last_url_ok = diag.get("url_ok")
         self.last_webhook_ok = diag.get("webhook_ok")
@@ -143,7 +146,7 @@ class Bot(db.Model):
         """Calcula taxa de falhas relativa ao tempo de vida do bot."""
         if not self.created_at:
             return float(self.failures or 0)
-        total_seconds = (datetime.utcnow() - self.created_at).total_seconds()
+        total_seconds = (now_utc() - self.created_at).total_seconds()
         if total_seconds <= 0:
             return float(self.failures or 0)
         return round((self.failures or 0) / total_seconds, 6)

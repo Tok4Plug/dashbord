@@ -8,11 +8,11 @@ import logging
 import threading
 import random
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 from flask import Flask, render_template, jsonify, request, make_response
-from sqlalchemy.exc import SQLAlchemyError, DBAPIError
+from sqlalchemy.exc import SQLAlchemyError, DBAPIError, IntegrityError
 from sqlalchemy import text
 from twilio.rest import Client
 
@@ -33,8 +33,8 @@ logger = logging.getLogger("monitor")
 # ================================
 # Variáveis de ambiente
 # ================================
-TYPEBOT_API = os.getenv("TYPEBOT_API", "")
-TYPEBOT_FLOW_ID = os.getenv("TYPEBOT_FLOW_ID", "")
+TYPEBOT_API = os.getenv("TYPEBOT_API", "").strip()
+TYPEBOT_FLOW_ID = os.getenv("TYPEBOT_FLOW_ID", "").strip()
 
 TWILIO_SID = os.getenv("TWILIO_SID")
 TWILIO_AUTH = os.getenv("TWILIO_AUTH")
@@ -52,6 +52,12 @@ HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "8.0"))
 MONITOR_ENABLED = os.getenv("MONITOR_ENABLED", "true").lower() in ("1", "true", "yes")
 
 DASHBOARD_ALLOW_ORIGIN = os.getenv("DASHBOARD_ALLOW_ORIGIN", "*")  # CORS simples
+
+# ================================
+# Helpers de tempo (UTC timezone-aware)
+# ================================
+def now_utc():
+    return datetime.now(timezone.utc)
 
 # ================================
 # Setup Flask
@@ -109,7 +115,7 @@ def cors_preflight(_):
 # Funções auxiliares
 # ================================
 def add_log(msg: str):
-    ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    ts = now_utc().strftime("%Y-%m-%d %H:%M:%S %Z")
     line = f"[{ts}] {msg}"
     with _state_lock:
         monitor_logs.append(line)
@@ -121,13 +127,13 @@ def safe_commit():
     try:
         db.session.commit()
         return True
-    except (SQLAlchemyError, DBAPIError) as e:
+    except (IntegrityError, SQLAlchemyError, DBAPIError) as e:
         db.session.rollback()
         add_log(f"❌ Erro no commit: {e}")
         return False
 
 def send_whatsapp(title: str, details: str):
-    if not twilio_client:
+    if not twilio_client or not (TWILIO_FROM and ADMIN_WHATSAPP):
         add_log("⚠️ Twilio não configurado.")
         return
     msg = (
@@ -164,13 +170,93 @@ def get_bots_from_db():
         return [], []
 
 def _get_payload():
+    """
+    Lê JSON ou form-data e normaliza strings. Suporta alias 'url' -> 'redirect_url'.
+    """
     data = request.get_json(silent=True) or {}
     if not data:
         data = request.form.to_dict() or {}
     for k in list(data.keys()):
         if isinstance(data[k], str):
             data[k] = data[k].strip()
+    # compatibilidade com painéis antigos
+    if "url" in data and "redirect_url" not in data:
+        data["redirect_url"] = data.pop("url")
     return data
+
+# ================================
+# Enriquecimento de leads + envio (subscribe)
+# ================================
+def _guess_e164(number: str):
+    if not number:
+        return None
+    digits = "".join(ch for ch in number if ch.isdigit())
+    if not digits:
+        return None
+    # se já iniciar com país (ex: 55...), adiciona '+'
+    if number.strip().startswith("+"):
+        return f"+{digits}"
+    # Heurística simples Brasil (55) quando tiver >= 10 dígitos e não tiver país explícito
+    if len(digits) >= 10 and not digits.startswith("0"):
+        return f"+{digits}" if digits.startswith("55") else f"+55{digits}"
+    return f"+{digits}"
+
+def _enrich_lead(payload: dict) -> dict:
+    p = dict(payload or {})
+    # timestamps UTC
+    p.setdefault("ts_utc", now_utc().isoformat())
+    # normalizações
+    phone = p.get("phone") or p.get("whatsapp") or p.get("telefone")
+    p["phone_e164_guess"] = _guess_e164(phone)
+    if p.get("email"):
+        try:
+            p["email_domain"] = p["email"].split("@", 1)[1].lower()
+        except Exception:
+            p["email_domain"] = None
+    name = (p.get("name") or p.get("nome") or "").strip()
+    if name:
+        parts = [x for x in name.split(" ") if x]
+        p["first_name"] = parts[0] if parts else None
+        p["last_name"] = parts[-1] if len(parts) > 1 else None
+    # utm & ref
+    for k in ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"):
+        p.setdefault(k, request.args.get(k) or request.form.get(k))
+    p.setdefault("referer", request.headers.get("Referer"))
+    # links úteis
+    if p.get("phone_e164_guess"):
+        digits = "".join(ch for ch in p["phone_e164_guess"] if ch.isdigit())
+        p["whatsapp_link"] = f"https://wa.me/{digits}"
+    return p
+
+def _send_to_typebot(enriched: dict) -> dict:
+    """
+    Envia para o endpoint de subscribe/lead do Typebot (ou API externa genérica).
+    Trabalha somente se TYPEBOT_API estiver configurado. Retorna dict com status.
+    """
+    info = {"sent": False, "status": None, "error": None}
+    if not TYPEBOT_API:
+        info["error"] = "TYPEBOT_API não configurado"
+        add_log("ℹ️ TYPEBOT_API ausente: lead registrado localmente, mas não enviado.")
+        return info
+    try:
+        # payload base
+        out = {
+            "flow_id": TYPEBOT_FLOW_ID or None,
+            "event": "subscribe",
+            "lead": enriched
+        }
+        # POST genérico; a API exata pode variar conforme seu conector
+        resp = requests.post(TYPEBOT_API, json=out, timeout=HTTP_TIMEOUT)
+        info["status"] = resp.status_code
+        if 200 <= resp.status_code < 300:
+            info["sent"] = True
+        else:
+            info["error"] = f"HTTP {resp.status_code} - {resp.text[:300]}"
+        return info
+    except Exception as e:
+        info["error"] = str(e)
+        add_log(f"❌ Erro no envio do lead: {e}")
+        return info
 
 # ================================
 # Verificação confiável (com WebhookInfo inteligente)
@@ -238,7 +324,7 @@ def _flask_app_context():
         yield
 
 def monitor_loop(interval: int = MONITOR_INTERVAL):
-    started_at = datetime.utcnow()
+    started_at = now_utc()
     with _flask_app_context():
         add_log("🔄 Iniciando varredura de bots...")
         ativos, reserva = get_bots_from_db()
@@ -246,7 +332,7 @@ def monitor_loop(interval: int = MONITOR_INTERVAL):
         send_whatsapp("🚀 Monitor Iniciado", f"Ativos: {len(ativos)} | Reservas: {len(reserva)}")
 
         while True:
-            cycle_started = datetime.utcnow()
+            cycle_started = now_utc()
             in_grace = (cycle_started - started_at).total_seconds() < STARTUP_GRACE_SECONDS
             ativos, reserva = get_bots_from_db()
 
@@ -276,7 +362,7 @@ def monitor_loop(interval: int = MONITOR_INTERVAL):
 
                 if diag["decision_ok"]:
                     bot.reset_failures()
-                    bot.last_ok = datetime.utcnow()
+                    bot.last_ok = now_utc()
                     safe_commit()
                     add_log(f"✅ {bot.name}: OK")
                     with _state_lock:
@@ -326,7 +412,7 @@ def monitor_loop(interval: int = MONITOR_INTERVAL):
                     else:
                         send_whatsapp("❌ Falha Crítica", "Não há mais bots na reserva!")
 
-            elapsed = (datetime.utcnow() - cycle_started).total_seconds()
+            elapsed = (now_utc() - cycle_started).total_seconds()
             time.sleep(max(1.0, interval - elapsed))
 
 # ================================
@@ -336,25 +422,24 @@ def _apply_bootstrap_patches():
     with app.app_context():
         try:
             with db.engine.begin() as conn:
-                # garante todas as colunas usadas no monitor e dashboard
+                # garante todas as colunas usadas no monitor e dashboard (TIMESTAMPTZ para coerência com timezone-aware)
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS redirect_url TEXT"))
-                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_ok TIMESTAMP NULL"))
+                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_ok TIMESTAMPTZ NULL"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS failures INTEGER DEFAULT 0"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_reason TEXT"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_token_ok BOOLEAN"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_url_ok BOOLEAN"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_ok BOOLEAN"))
-                # campos que já apareceram nos logs de erro desta app
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_token_http INTEGER"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_url_http INTEGER"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_url TEXT"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_error TEXT"))
-                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_error_at TIMESTAMP"))
+                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS last_webhook_error_at TIMESTAMPTZ"))
                 conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS pending_update_count INTEGER"))
-                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP"))
-                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS created_at TIMESTAMP"))
+                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ"))
+                conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ"))
 
-                # índices úteis e idempotentes
+                # índices úteis e idempotentes (PostgreSQL)
                 conn.execute(text("""
                     DO $$
                     BEGIN
@@ -385,7 +470,7 @@ def _apply_bootstrap_patches():
                 """))
             add_log("✅ Patch no schema aplicado")
         except Exception as e:
-            add_log(f"⚠️ Patch falhou: {e}")
+            add_log(f"⚠️ Patch falhou (ignorado se não-Postgres): {e}")
 
 # ================================
 # Controle do Monitor
@@ -434,6 +519,7 @@ def index():
     return render_template("dashboard.html")
 
 @app.route("/health")
+@app.route("/healthz")
 def health():
     return jsonify({"ok": True, "ts": int(time.time())})
 
@@ -475,7 +561,10 @@ def api_bots():
             d["_diag"] = cached.get("diag")
             d["_diag_ts"] = cached.get("when")
             payload.append(d)
-        return jsonify({"bots": payload, "metrics": metrics})
+        # Inclui logs e last_action para compatibilidade com dashboards
+        with _state_lock:
+            logs_copy = list(monitor_logs)
+        return jsonify({"bots": payload, "logs": logs_copy, "metrics": metrics, "last_action": metrics.get("last_check_ts")})
     except Exception as e:
         _rollback_if_failed_tx(e)
         return jsonify({"error": str(e)}), 500
@@ -547,6 +636,43 @@ def delete_bot(bot_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/bots/<int:bot_id>/force_swap", methods=["POST"])
+def force_swap(bot_id):
+    """
+    Força a troca do bot especificado (move para reserva) por um bot da fila de reserva (primeiro da lista).
+    Mantém a mesma lógica de substituição usada no monitor.
+    """
+    try:
+        atual = Bot.query.get(bot_id)
+        if not atual:
+            return jsonify({"error": "Bot não encontrado"}), 404
+
+        # Move o bot atual para reserva
+        atual.mark_reserve()
+        safe_commit()
+
+        # Escolhe um bot da reserva (mais antigo/primeiro)
+        _, reserva = get_bots_from_db()
+        if not reserva:
+            send_whatsapp("❌ Forçar Troca", "Não há bots na reserva!")
+            return jsonify({"error": "Não há bots na reserva"}), 409
+
+        novo = reserva[0]
+        novo.mark_active()
+        if safe_commit():
+            metrics["switches_total"] += 1
+            send_whatsapp(
+                "🔄 Substituição Forçada",
+                f"❌ {atual.name} ➜ reserva\n➡️ ✅ {novo.name} ativo\nNovo URL: {novo.redirect_url}"
+            )
+            add_log(f"✅ Troca forçada concluída: {atual.name} ➜ {novo.name}")
+            return jsonify({"ok": True, "from": atual.to_dict(), "to": novo.to_dict()})
+
+        return jsonify({"error": "Falha ao efetivar troca"}), 500
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/webhookinfo/<int:bot_id>", methods=["GET"])
 def api_webhookinfo(bot_id):
     try:
@@ -559,9 +685,41 @@ def api_webhookinfo(bot_id):
         return jsonify({"error": str(e)}), 500
 
 # ================================
-# Main
+# Lead + Subscribe (enviar lead junto com subscribe + enriquecimento)
 # ================================
+@app.route("/api/subscribe", methods=["POST"])
+def api_subscribe():
+    """
+    Recebe um lead (name, email, phone, etc), enriquece, registra evento e envia para TYPEBOT_API (se configurado).
+    Retorno inclui 'enriched' e status do envio externo.
+    """
+    try:
+        raw = _get_payload()
+        enriched = _enrich_lead(raw)
+        # log interno
+        try:
+            log_event("subscribe", enriched)  # se utils.log_event existir
+        except Exception:
+            pass
+        send_info = _send_to_typebot(enriched)
+        add_log(f"📝 Subscribe recebido | sent={send_info['sent']} | status={send_info['status']} | err={send_info['error']}")
+        return jsonify({"ok": True, "enriched": enriched, "send_result": send_info})
+    except Exception as e:
+        add_log(f"❌ /api/subscribe erro: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/lead", methods=["POST"])
+def api_lead():
+    """
+    Alias de subscribe, compatível com integrações antigas.
+    """
+    return api_subscribe()
+
+# ================================
+# Inicialização em import (para Gunicorn) + Main local
+# ================================
+_apply_bootstrap_patches()
+_start_monitor_background()
+
 if __name__ == "__main__":
-    _apply_bootstrap_patches()
-    _start_monitor_background()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=False)
